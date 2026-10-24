@@ -1,0 +1,11 @@
+{
+  "name": "FortGPS Field",
+  "short_name": "FortGPS",
+  "description": "Offline terénní sběr fortifikačních bodů",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#101d19",
+  "theme_color": "#20352e",
+  "lang": "cs"
+}
