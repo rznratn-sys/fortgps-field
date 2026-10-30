@@ -1,0 +1,402 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "FortGPS Field session 2.0",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "session_id": {
+      "type": "string",
+      "format": "uuid",
+      "pattern": "^[0-9a-f-]{36}$"
+    },
+    "schema_version": {
+      "const": "2.0"
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "session_mode": {
+      "enum": [
+        "photo",
+        "standalone",
+        "legacy"
+      ]
+    },
+    "started_at": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
+    "ended_at": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "updated_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "session_status": {
+      "enum": [
+        "open",
+        "completed",
+        "incomplete",
+        "cancelled",
+        "standalone",
+        "legacy_unverified"
+      ]
+    },
+    "object_type": {
+      "enum": [
+        null,
+        "jednoduchy_bunkr",
+        "velky_bunkr",
+        "vstup_do_podzemi"
+      ]
+    },
+    "note": {
+      "type": "string"
+    },
+    "measurements": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/measurement"
+      }
+    },
+    "photo_associations": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/photo_association"
+      }
+    },
+    "warnings": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true
+    },
+    "verification_status": {
+      "const": "unverified"
+    },
+    "source": {
+      "type": "string"
+    },
+    "legacy_record_json": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "session_id",
+    "schema_version",
+    "revision",
+    "session_mode",
+    "started_at",
+    "ended_at",
+    "created_at",
+    "updated_at",
+    "session_status",
+    "object_type",
+    "note",
+    "measurements",
+    "photo_associations",
+    "warnings",
+    "verification_status",
+    "source",
+    "legacy_record_json"
+  ],
+  "$defs": {
+    "measurement": {
+      "type": "object",
+      "properties": {
+        "measurement_id": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^[0-9a-f-]{36}$"
+        },
+        "session_id": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^[0-9a-f-]{36}$"
+        },
+        "measurement_role": {
+          "enum": [
+            "first_contact",
+            "object_survey",
+            "legacy_observer"
+          ]
+        },
+        "measured_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "latitude": {
+          "type": "number",
+          "minimum": -90,
+          "maximum": 90
+        },
+        "longitude": {
+          "type": "number",
+          "minimum": -180,
+          "maximum": 180
+        },
+        "horizontal_accuracy_m": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "altitude_m": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "vertical_accuracy_m": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "altitude_reference": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "position_relation": {
+          "enum": [
+            null,
+            "on_roof",
+            "at_entrance",
+            "safe_nearby"
+          ]
+        },
+        "location_provider": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "elapsed_realtime_nanos": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "is_mock": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "mean_sea_level_altitude_m": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "mean_sea_level_accuracy_m": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "mean_sea_level_reference": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "measurement_id",
+        "session_id",
+        "measurement_role",
+        "measured_at",
+        "created_at",
+        "latitude",
+        "longitude",
+        "horizontal_accuracy_m",
+        "altitude_m",
+        "vertical_accuracy_m",
+        "altitude_reference",
+        "position_relation",
+        "location_provider",
+        "elapsed_realtime_nanos",
+        "is_mock",
+        "mean_sea_level_altitude_m",
+        "mean_sea_level_accuracy_m",
+        "mean_sea_level_reference"
+      ],
+      "additionalProperties": false
+    },
+    "photo_association": {
+      "type": "object",
+      "properties": {
+        "session_id": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^[0-9a-f-]{36}$"
+        },
+        "photo_reference": {
+          "type": "object",
+          "properties": {
+            "sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "size_bytes": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "original_name": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "hash_scope": {
+              "const": "android_picker_delivered_bytes"
+            },
+            "original_identity_verified": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "sha256",
+            "size_bytes",
+            "original_name",
+            "hash_scope",
+            "original_identity_verified"
+          ],
+          "additionalProperties": false
+        },
+        "association_method": {
+          "enum": [
+            "user_photo_picker"
+          ]
+        },
+        "association_status": {
+          "enum": [
+            "user_confirmed",
+            "rejected",
+            "needs_review"
+          ]
+        },
+        "association_confidence": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 1
+        }
+      },
+      "required": [
+        "session_id",
+        "photo_reference",
+        "association_method",
+        "association_status",
+        "association_confidence"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "session_status": {
+            "const": "open"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "ended_at": {
+            "type": "null"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "session_status": {
+            "const": "completed"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "started_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "ended_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "object_type": {
+            "type": "string"
+          }
+        },
+        "allOf": [
+          {
+            "properties": {
+              "measurements": {
+                "contains": {
+                  "properties": {
+                    "measurement_role": {
+                      "const": "first_contact"
+                    }
+                  },
+                  "required": [
+                    "measurement_role"
+                  ]
+                }
+              }
+            }
+          },
+          {
+            "properties": {
+              "measurements": {
+                "contains": {
+                  "properties": {
+                    "measurement_role": {
+                      "const": "object_survey"
+                    }
+                  },
+                  "required": [
+                    "measurement_role"
+                  ]
+                }
+              }
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

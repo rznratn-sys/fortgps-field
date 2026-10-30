@@ -1,0 +1,98 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Field Spatial sidecar v1",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "adapter_version",
+    "source_field_sha256",
+    "session_id",
+    "field_revision",
+    "catalog_sha256",
+    "catalog_run_id",
+    "catalog_module_version",
+    "terrain_run_id",
+    "identity_confirmed",
+    "evidence_class",
+    "policy",
+    "measurement_results",
+    "photo_associations",
+    "warnings",
+    "processing_status"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "field-spatial/1"
+    },
+    "source_field_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "catalog_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "identity_confirmed": {
+      "const": false
+    },
+    "evidence_class": {
+      "const": "computed_candidate_relationships"
+    },
+    "processing_status": {
+      "enum": [
+        "processed",
+        "no_object_survey",
+        "not_final_or_cancelled"
+      ]
+    },
+    "measurement_results": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "measurement_id",
+          "candidates",
+          "status"
+        ],
+        "properties": {
+          "candidates": {
+            "type": "array",
+            "maxItems": 10,
+            "items": {
+              "type": "object",
+              "required": [
+                "object_uid",
+                "distance_m",
+                "azimuth_deg",
+                "terrain_elevation_m",
+                "delta_z_m",
+                "identity_confirmed"
+              ],
+              "properties": {
+                "distance_m": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1000
+                },
+                "azimuth_deg": {
+                  "type": [
+                    "number",
+                    "null"
+                  ],
+                  "minimum": 0,
+                  "exclusiveMaximum": 360
+                },
+                "delta_z_m": {
+                  "type": "null"
+                },
+                "identity_confirmed": {
+                  "const": false
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

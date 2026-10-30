@@ -1,0 +1,14 @@
+*.jks
+*.keystore
+local.properties
+**/build/
+**/.gradle/
+**/.kotlin/
+__pycache__/
+*.pyc
+private/
+*.sqlite
+*.sqlite.zip
+*.apk
+credentials*.json
+token*.json
