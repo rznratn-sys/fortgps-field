@@ -12,6 +12,13 @@ mod = importlib.util.module_from_spec(spec); spec.loader.exec_module(mod)
 class ContractTest(unittest.TestCase):
     def fixture(self): return json.loads((ROOT / "tests/fixtures/session-2.0.json").read_text())
     def test_schema_fixture(self): self.assertEqual("standalone", mod.load_field(json.dumps(self.fixture()).encode())["session_status"])
+    def test_alpha2_xmp_result_is_additive_and_does_not_replace_measurements(self):
+        r = self.fixture(); original = r["measurements"][:]
+        r.update(photo_timezone_start="Europe/Prague", photo_timezone_end="Europe/Prague",
+                 photo_clock_epoch_start=1, photo_clock_epoch_end=1,
+                 xmp_result={"state":"verified", "message":"verified", "photo_name":"test.jpg",
+                             "before_sha256":"a"*64,"after_sha256":"b"*64,"protected_jpeg_sha256":"c"*64,"selection_method":"automatic_exif_interval"})
+        self.assertEqual(original, mod.load_field(json.dumps(r).encode())["measurements"])
     def test_missing_height_stays_null(self): self.assertIsNone(mod.load_field(json.dumps(self.fixture()).encode())["measurements"][0]["altitude_m"])
     def test_foreign_session_rejected(self):
         r = self.fixture(); r["measurements"][0]["session_id"] = "12345678-1234-4234-8234-123456789abd"

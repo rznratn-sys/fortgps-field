@@ -19,6 +19,23 @@ class FieldViewModel(app: Application) : AndroidViewModel(app) {
     val sessions = db.dao().observe().map { rows -> rows.map { wire.decodeFromString<FieldSession>(it.payload) } }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     val queue = db.dao().observeQueue().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    val xmpOperations = db.dao().observeXmp().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    val xmpChoices = MutableStateFlow<Pair<String,List<TimedPhoto>>?>(null)
+    fun retryXmp(id: String) { XmpWorker.enqueue(getApplication(),id); message.value="GPS zůstává uložené. XMP zařazeno k opakování." }
+    fun chooseXmp(id: String) = run {
+        xmpChoices.value = withContext(Dispatchers.IO) {
+            val s=wire.decodeFromString<FieldSession>(requireNotNull(db.dao().get(id)).payload)
+            require(s.session_status=="completed" && s.session_mode=="photo")
+            id to MediaPhotos(getApplication()).find(s).filter { p ->
+                p.time==null || (p.time.earliest>=Instant.parse(s.started_at) && p.time.latestExclusive.minusNanos(1)<=Instant.parse(s.ended_at))
+            }
+        }
+    }
+    fun selectXmp(id: String,p: TimedPhoto) = run {
+        withContext(Dispatchers.IO) { XmpService(getApplication()).select(id,p.uri,p.name) }; xmpChoices.value=null
+    }
+    fun restoreXmp(id: String) = run { withContext(Dispatchers.IO) { XmpService(getApplication()).restoreOriginal(id) } }
+    fun deniedXmp(id: String) = run { withContext(Dispatchers.IO) { XmpService(getApplication()).deny(id) } }
     val message = MutableStateFlow("Připraveno. Data se nejdřív ukládají v telefonu.")
     val busy = MutableStateFlow(false)
     private var captureJob: Job? = null
@@ -40,13 +57,20 @@ class FieldViewModel(app: Application) : AndroidViewModel(app) {
         message.value = "Zjišťuji novou polohu…"
         val m = LocationCapture(getApplication()).measure(id, if (action == "start") "first_contact" else "object_survey")
         when (action) {
-            "start" -> repo.create(SessionEngine.start(m).copy(object_type = type, note = note).checked())
-            "finish" -> repo.change(id) { SessionEngine.finish(it, m, type, relation, note, Instant.now().toString()) }
+            "start" -> repo.create(SessionEngine.start(m).copy(object_type = type, note = note, photo_clock_epoch_start = clockEpoch(getApplication())).checked())
+            "finish" -> repo.change(id) { SessionEngine.finish(it, m, type, relation, note, Instant.now().toString()).copy(photo_clock_epoch_end = clockEpoch(getApplication())) }
             "standalone" -> repo.create(SessionEngine.standalone(m, type, relation, note))
             else -> error("Neznámá akce")
         }
         message.value = "Uloženo v telefonu. Přesnost ±${m.horizontal_accuracy_m?.toInt() ?: "?"} m."
         scheduleSync(getApplication(), true)
+        if(action=="finish") {
+            // GPS commit and outbox precede all photo work. A media failure cannot undo them.
+            try {
+                db.dao().putXmp(XmpRow(id)); XmpWorker.enqueue(getApplication(),id)
+                message.value += " XMP čeká na kontrolu; výsledek je v historii relací."
+            } catch(e: Exception) { message.value += " XMP se nepodařilo zařadit: ${e.message}. Opakuj v historii." }
+        }
     }
     fun closeWithoutSurvey(type: String, relation: String, note: String) = run {
         val id = requireNotNull(db.dao().active()).id

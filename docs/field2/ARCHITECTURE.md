@@ -1,3 +1,5 @@
+> Tento dokument popisuje původní alpha1. Aktuální změny alpha2: [implementace](alpha2/IMPLEMENTATION.md), [instalace](alpha2/INSTALL.md), [ověření](alpha2/TEST_REPORT.md).
+
 # Architektura Field 2.0
 
 Kotlin, Compose, Android LocationManager, Room/SQLite, WorkManager,

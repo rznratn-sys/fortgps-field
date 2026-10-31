@@ -9,7 +9,22 @@ Původní `index.html`, `manifest.webmanifest` a `sw.js` jsou zachované.
 [Spustit webovou verzi](https://rznratn-sys.github.io/fortgps-field/).
 Webová localStorage data se automaticky do Androidu nepřenášejí; lze exportovat a importovat JSON.
 
-## Field 2.0.0-alpha1 — nativní Android
+## Field 2.0.0-alpha2 — nativní Android
+
+Automatické propojení jedné poslední fotografie relace a vložení FortGPS XMP
+přímo do originálu JPEG; původní EXIF GPS a obrazová data zůstávají zachována.
+Samostatný trvalý stav XMP, systémový souhlas, opakování a obnova ze zálohy.
+
+**Prerelease: skutečné JPEG ověřeny, provoz na telefonu dosud neověřen.**
+MediaStore neposkytuje atomickou výměnu: po pádu může být nutná obnova.
+Historické alpha1 relace bez uloženého pásma mohou vyžadovat ruční výběr.
+
+- [Instalace a bezpečná aktualizace alpha2](docs/field2/alpha2/INSTALL.md)
+- [Implementace, ochrana originálu a omezení](docs/field2/alpha2/IMPLEMENTATION.md)
+- [Testovací zpráva a povinný telefonní pilot](docs/field2/alpha2/TEST_REPORT.md)
+- [FortGPS XMP namespace](ns/fortgps/1.0/README.md)
+
+## Field 2.0.0-alpha1 — původní základ (historie)
 
 Kotlin/Compose, nativní GPS, offline Room databáze, fotografické relace,
 samostatné body, bezpečné neúplné relace, opravy a neměnná synchronizační fronta.

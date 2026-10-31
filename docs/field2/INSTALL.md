@@ -1,3 +1,5 @@
+> Tento dokument popisuje původní alpha1. Aktuální změny alpha2: [implementace](alpha2/IMPLEMENTATION.md), [instalace](alpha2/INSTALL.md), [ověření](alpha2/TEST_REPORT.md).
+
 # Instalace Field 2.0.0-alpha1
 
 Nativní Android aplikace pro Android 8.0+ (API 26+), balíček `cz.fortgps.field`.

@@ -32,6 +32,43 @@ import java.time.Instant
 class MainActivity : ComponentActivity() {
     private lateinit var vm: FieldViewModel
     private var photoSessionId: String? = null
+    private var xmpPermissionSession: String? = null
+    private val mediaPermissions = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
+        xmpPermissionSession?.let(vm::retryXmp)
+    }
+    private val writePermission = registerForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { result ->
+        xmpPermissionSession?.let { id -> if(result.resultCode==RESULT_OK) vm.retryXmp(id) else vm.deniedXmp(id) }
+    }
+    private fun requestXmp(id: String) {
+        xmpPermissionSession=id
+        val media=MediaPhotos(this)
+        if(!media.fullReadPermission()) {
+            mediaPermissions.launch(buildList {
+                add(if(android.os.Build.VERSION.SDK_INT>=33) Manifest.permission.READ_MEDIA_IMAGES else Manifest.permission.READ_EXTERNAL_STORAGE)
+                if(android.os.Build.VERSION.SDK_INT>=34) add(Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED)
+                if(android.os.Build.VERSION.SDK_INT>=29) add(Manifest.permission.ACCESS_MEDIA_LOCATION)
+                if(android.os.Build.VERSION.SDK_INT<=28) add(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+            }.toTypedArray()); return
+        }
+        lifecycleScope.launch {
+            try {
+                val row=withContext(Dispatchers.IO) { FieldDb.get(this@MainActivity).dao().xmp(id) }
+                val uri=row?.uri?.let(android.net.Uri::parse)
+                if(uri==null) { vm.retryXmp(id); return@launch }
+                if(android.os.Build.VERSION.SDK_INT>=30) {
+                    val pending=android.provider.MediaStore.createWriteRequest(contentResolver,listOf(uri))
+                    writePermission.launch(IntentSenderRequest.Builder(pending.intentSender).build())
+                } else {
+                    try { withContext(Dispatchers.IO) { contentResolver.openFileDescriptor(uri,"rw")!!.close() }; vm.retryXmp(id) }
+                    catch(e: SecurityException) {
+                        if(android.os.Build.VERSION.SDK_INT>=29 && e is android.app.RecoverableSecurityException)
+                            writePermission.launch(IntentSenderRequest.Builder(e.userAction.actionIntent.intentSender).build())
+                        else throw e
+                    }
+                }
+            } catch(e: Exception) { vm.message.value="Systémový souhlas se nepodařilo získat: ${e.message}"; vm.deniedXmp(id) }
+        }
+    }
     private val permissions = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
         vm.message.value = "Oprávnění vyhodnoceno. Pro nové měření stiskni znovu tlačítko."
     }
@@ -50,11 +87,12 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         photoSessionId = savedInstanceState?.getString("photoSessionId")
+        xmpPermissionSession = savedInstanceState?.getString("xmpPermissionSession")
         vm = ViewModelProvider(this)[FieldViewModel::class.java]
         setContent {
             MaterialTheme(colorScheme = darkColorScheme(primary = Color(0xFFB7DF7C), onPrimary = Color(0xFF122515),
                 background = Color(0xFF101D19), surface = Color(0xFF20352E), onSurface = Color(0xFFF0F5ED))) {
-                FieldScreen(vm, onCapture = { a, t, r, n ->
+                FieldScreen(vm, onXmpPermission = ::requestXmp, onCapture = { a, t, r, n ->
                     if (checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED)
                         permissions.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
                     else vm.capture(a, t, r, n)
@@ -66,7 +104,7 @@ class MainActivity : ComponentActivity() {
         }
     }
     override fun onSaveInstanceState(outState: Bundle) {
-        super.onSaveInstanceState(outState); outState.putString("photoSessionId", photoSessionId)
+        super.onSaveInstanceState(outState); outState.putString("photoSessionId", photoSessionId); outState.putString("xmpPermissionSession",xmpPermissionSession)
     }
     private fun connect(email: String, folderInput: String) {
         val folder = folderInput.trim().substringAfter("/folders/").substringBefore('?').substringBefore('/')
@@ -116,11 +154,21 @@ private fun statusLabel(s: String) = when (s) {
     }
 }
 @Composable private fun FieldScreen(vm: FieldViewModel, onCapture: (String, String, String, String) -> Unit,
-    onConnect: (String, String) -> Unit, onPhotos: (String) -> Unit, onExport: () -> Unit, onImport: () -> Unit) {
+    onXmpPermission: (String) -> Unit, onConnect: (String, String) -> Unit, onPhotos: (String) -> Unit, onExport: () -> Unit, onImport: () -> Unit) {
     val sessions by vm.sessions.collectAsStateWithLifecycle()
     val queue by vm.queue.collectAsStateWithLifecycle()
+    val xmp by vm.xmpOperations.collectAsStateWithLifecycle()
+    val choices by vm.xmpChoices.collectAsStateWithLifecycle()
     val busy by vm.busy.collectAsStateWithLifecycle()
     val message by vm.message.collectAsStateWithLifecycle()
+    val context=androidx.compose.ui.platform.LocalContext.current
+    LaunchedEffect(xmp) {
+        xmp.filter { it.state=="permission_required" }.forEach { op ->
+            val prefs=context.getSharedPreferences("xmp-prompts",Context.MODE_PRIVATE)
+            val key=op.sessionId+":"+(op.uri ?: "read")
+            if(!prefs.getBoolean(key,false)) { prefs.edit().putBoolean(key,true).apply(); onXmpPermission(op.sessionId) }
+        }
+    }
     val active = sessions.firstOrNull { it.session_status == "open" }
     var type by rememberSaveable { mutableStateOf("jednoduchy_bunkr") }
     var relation by rememberSaveable { mutableStateOf("safe_nearby") }
@@ -129,13 +177,14 @@ private fun statusLabel(s: String) = when (s) {
     var history by rememberSaveable { mutableStateOf(false) }
     var settings by rememberSaveable { mutableStateOf(false) }
     var confirm by remember { mutableStateOf<String?>(null) }
+    var restoreId by rememberSaveable { mutableStateOf<String?>(null) }
     var editId by rememberSaveable { mutableStateOf<String?>(null) }
     var editType by rememberSaveable { mutableStateOf("jednoduchy_bunkr") }
     var editNote by rememberSaveable { mutableStateOf("") }
     Surface(modifier = Modifier.fillMaxSize()) {
         Column(Modifier.safeDrawingPadding().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text("FortGPS Field", style = MaterialTheme.typography.headlineLarge)
-            Text("2.0 • Terénní důkazy", color = MaterialTheme.colorScheme.primary)
+            Text("2.0.0-alpha2 • Terénní důkazy", color = MaterialTheme.colorScheme.primary)
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text(if (active == null) "ŽÁDNÁ OTEVŘENÁ RELACE" else statusLabel(active.session_status), style = MaterialTheme.typography.titleMedium)
@@ -157,6 +206,7 @@ private fun statusLabel(s: String) = when (s) {
                     } else OutlinedButton(onClick = { onCapture("standalone", type, relation, note) }, enabled = !busy, modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)) { Text("Zaměřit samostatný bod") }
                     if (busy) { LinearProgressIndicator(Modifier.fillMaxWidth()); TextButton(onClick = vm::stopMeasurement) { Text("Zastavit čekání") } }
                     Text(message)
+                    xmp.lastOrNull()?.let { Text(it.message) }
                 }
             }
             Card(Modifier.fillMaxWidth()) {
@@ -186,6 +236,17 @@ private fun statusLabel(s: String) = when (s) {
                             if (s.note.isNotBlank()) Text(s.note)
                             if (s.warnings.isNotEmpty()) Text("K prověření: ${s.warnings.joinToString()}", style = MaterialTheme.typography.bodySmall)
                             TextButton(onClick = { editId = s.session_id; editType = s.object_type ?: "jednoduchy_bunkr"; editNote = s.note }, enabled = !busy, modifier = Modifier.heightIn(min = 56.dp)) { Text("Opravit typ / poznámku") }
+                            if(s.session_mode=="photo" && s.session_status=="completed") {
+                                val op=xmp.firstOrNull { it.sessionId==s.session_id }
+                                Text(op?.message ?: "XMP dosud neprovedeno")
+                                if(op?.state!="verified") {
+                                    TextButton(onClick={ if(op?.state=="permission_required") onXmpPermission(s.session_id) else vm.retryXmp(s.session_id) },enabled=!busy) {
+                                        Text(if(op?.backupPath!=null) "Obnovit / ověřit originál" else if(op?.state=="permission_required") "Povolit přístup a zápis XMP" else "Opakovat XMP")
+                                    }
+                                    if(op?.backupPath!=null) TextButton(onClick={restoreId=s.session_id},enabled=!busy) { Text("Obnovit původní JPG ze zálohy…") }
+                                    if(op?.backupPath==null) TextButton(onClick={ vm.chooseXmp(s.session_id) },enabled=!busy) { Text("Vybrat originál ručně pro XMP") }
+                                }
+                            }
                             TextButton(onClick = { onPhotos(s.session_id) }, enabled = !busy, modifier = Modifier.heightIn(min = 56.dp)) { Text("Potvrdit fotografie (${s.photo_associations.size})") }
                         }
                     }
@@ -194,6 +255,14 @@ private fun statusLabel(s: String) = when (s) {
             Text("WGS84 • Udávaná přesnost není záruka. Bod u vstupu není geometrický střed. Výška GPS není výška terénu z DEM.", style = MaterialTheme.typography.bodySmall)
         }
     }
+    if(restoreId!=null) AlertDialog(onDismissRequest={restoreId=null}, title={Text("Obnovit původní fotografii?")},text={Text("Tímto nahradíš aktuální obsah snímku ověřenou zálohou před zápisem XMP. Případné pozdější změny z galerie se ztratí.")},confirmButton={TextButton(onClick={vm.restoreXmp(restoreId!!);restoreId=null}){Text("Obnovit originál")}},dismissButton={TextButton(onClick={restoreId=null}){Text("Zpět")}})
+    if(choices!=null) AlertDialog(onDismissRequest={vm.xmpChoices.value=null},title={Text("Potvrdit jediný snímek pro XMP")},text={
+        Column(Modifier.verticalScroll(rememberScrollState())) {
+            Text("Volba potvrzuje příslušnost k relaci i při chybějícím časovém pásmu. Souřadnice se převezmou ze závěrečného zaměření. Konfliktní XMP se nepřepisuje.")
+            if(choices!!.second.isEmpty()) Text("Žádný vhodný snímek v DCIM/Camera.")
+            choices!!.second.forEach { p -> TextButton(onClick={vm.selectXmp(choices!!.first,p)}) { Text("${p.name}\n${p.time?.earliest ?: "Nejednoznačný čas – potvrdit ručně"}") } }
+        }
+    },confirmButton={TextButton(onClick={vm.xmpChoices.value=null}) {Text("Zpět")}})
     if (confirm != null) AlertDialog(onDismissRequest = { confirm = null }, title = { Text(if (confirm == "cancel") "Zrušit relaci?" else "Uzavřít bez druhého bodu?") },
         text = { Text("Původní měření zůstane uložené. Kvůli bodu není potřeba riskovat přiblížení k objektu.") },
         confirmButton = { TextButton(onClick = { if (confirm == "cancel") vm.cancel() else vm.closeWithoutSurvey(type, relation, note); confirm = null }) { Text("Potvrdit") } },

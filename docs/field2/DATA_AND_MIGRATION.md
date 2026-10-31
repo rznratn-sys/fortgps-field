@@ -1,3 +1,5 @@
+> Tento dokument popisuje původní alpha1. Aktuální změny alpha2: [implementace](alpha2/IMPLEMENTATION.md), [instalace](alpha2/INSTALL.md), [ověření](alpha2/TEST_REPORT.md).
+
 # Field 2.0: datový kontrakt a migrace
 
 Schéma: [`field-session-2.0.schema.json`](../../schemas/field-session-2.0.schema.json).

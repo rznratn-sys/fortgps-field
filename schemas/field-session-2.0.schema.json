@@ -96,6 +96,89 @@
         "string",
         "null"
       ]
+    },
+    "photo_timezone_start": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "photo_timezone_end": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "xmp_result": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "state": {
+          "enum": [
+            "pending",
+            "searching",
+            "permission_required",
+            "writing",
+            "verified",
+            "no_photo",
+            "ambiguous",
+            "failed",
+            "conflict"
+          ]
+        },
+        "message": {
+          "type": "string"
+        },
+        "photo_name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "before_sha256": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "after_sha256": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "protected_jpeg_sha256": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "selection_method": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "state",
+        "message"
+      ]
+    },
+    "photo_clock_epoch_start": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "photo_clock_epoch_end": {
+      "type": [
+        "integer",
+        "null"
+      ]
     }
   },
   "required": [

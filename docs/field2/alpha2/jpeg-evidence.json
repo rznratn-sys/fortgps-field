@@ -1,0 +1,15 @@
+{
+  "selected": "20261031_185149.jpg",
+  "before_sha256": "9a283f7df05370c45eba26b90abd3e973fc7b46309f5568e0c4a7941cf265efe",
+  "after_sha256": "f15834e06142e5a3503ca803e12d98ae3f746faf6547cfc18c6835b7c59fd1ea",
+  "protected_jpeg_sha256": "3e33e76f8e5682c749a3970e9b886c835d4a5514b27a8dc5ef0b9fbc71caa14a",
+  "timezone_assumption": "Europe/Prague",
+  "unchanged_other_files": 6,
+  "independent_exiftool": true,
+  "exif_segment_identical": true,
+  "protected_bytes_identical": true,
+  "decoded_pixels_identical": true,
+  "host_move_xmp_read": true,
+  "zip_roundtrip_xmp_read": true,
+  "archive_original_sha256": "e1c4dd3f09790814fb1df49f716fcfb24c0d6601a4ab0bf3397075e35173ed10"
+}

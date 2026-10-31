@@ -12,8 +12,8 @@ android {
         applicationId = "cz.fortgps.field"
         minSdk = 26
         targetSdk = 35
-        versionCode = 20000
-        versionName = "2.0.0-alpha1"
+        versionCode = 20001
+        versionName = "2.0.0-alpha2"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     buildFeatures { compose = true }
@@ -34,6 +34,9 @@ android {
     }
 }
 dependencies {
+    implementation("androidx.exifinterface:exifinterface:1.4.1")
+    implementation("org.apache.commons:commons-imaging:1.0.0-alpha5")
+    implementation("com.adobe.xmp:xmpcore:6.1.11")
     implementation(platform("androidx.compose:compose-bom:2024.12.01"))
     implementation("androidx.activity:activity-compose:1.10.1")
     implementation("androidx.compose.material3:material3")

@@ -31,6 +31,11 @@ val relations = linkedMapOf("on_roof" to "Na stropě", "at_entrance" to "U vstup
     val association_status: String = "user_confirmed",
     val association_confidence: Double? = null
 )
+@Serializable data class XmpResult(
+    val state: String, val message: String, val photo_name: String? = null,
+    val before_sha256: String? = null, val after_sha256: String? = null,
+    val protected_jpeg_sha256: String? = null, val selection_method: String? = null
+)
 @Serializable data class FieldSession(
     val session_id: String = uuid(), val schema_version: String = "2.0",
     val revision: Int = 1, val session_mode: String = "photo",
@@ -41,7 +46,10 @@ val relations = linkedMapOf("on_roof" to "Na stropě", "at_entrance" to "U vstup
     val photo_associations: List<FieldPhotoAssociation> = emptyList(),
     val warnings: List<String> = emptyList(), val verification_status: String = "unverified",
     val source: String = "FortGPS Field Android",
-    val legacy_record_json: String? = null
+    val legacy_record_json: String? = null,
+    val photo_timezone_start: String? = null, val photo_timezone_end: String? = null,
+    val xmp_result: XmpResult? = null,
+    val photo_clock_epoch_start: Long? = null, val photo_clock_epoch_end: Long? = null
 ) {
     fun validate() {
         require(UUID.fromString(session_id).toString() == session_id)
@@ -96,12 +104,14 @@ val relations = linkedMapOf("on_roof" to "Na stropě", "at_entrance" to "U vstup
 object SessionEngine {
     fun start(m: FieldMeasurement): FieldSession = FieldSession(session_id = m.session_id,
         started_at = m.measured_at, created_at = m.created_at, updated_at = m.created_at,
-        measurements = listOf(m.copy(measurement_role = "first_contact", position_relation = null))).checked()
+        measurements = listOf(m.copy(measurement_role = "first_contact", position_relation = null)),
+        photo_timezone_start = java.time.ZoneId.systemDefault().id).checked()
 
     fun finish(s: FieldSession, m: FieldMeasurement?, type: String, relation: String, note: String, now: String): FieldSession {
         require(s.session_status == "open"); require(type in objectTypes); require(relation in relations)
         require(m == null || m.session_id == s.session_id)
         return s.copy(revision = s.revision + 1, ended_at = m?.measured_at ?: now, updated_at = now,
+            photo_timezone_end = java.time.ZoneId.systemDefault().id,
             session_status = if (m == null) "incomplete" else "completed", object_type = type, note = note,
             measurements = s.measurements + listOfNotNull(m?.copy(measurement_role = "object_survey", position_relation = relation)),
             warnings = s.warnings + if (m == null) listOf("no_safe_object_survey") else emptyList()).checked()
