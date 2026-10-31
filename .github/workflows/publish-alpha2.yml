@@ -19,8 +19,59 @@ jobs:
           signer=$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -1)
           test -n "$signer"
           "$signer" verify --verbose --print-certs FortGPS_Field_2.0.0-alpha2.apk | tee certificate.txt
-          grep -F 'Signer #1 certificate SHA-256 digest: ef2ee10dc4833159a50f0b550e8eb4eeac53f21ef47079136b5151990b74fb72' certificate.txt
-      - name: Publish prerelease with one clearly named installation APK
+          python3 - <<'PY'
+          import hashlib, json, re
+          from pathlib import Path
+          expected = "ef2ee10dc4833159a50f0b550e8eb4eeac53f21ef47079136b5151990b74fb72"
+          def verify_certificate(text):
+              counts = re.findall(r"^Number of signers:\s*(\d+)\s*$", text, re.M)
+              if counts != ["1"]:
+                  raise ValueError("Missing or ambiguous signer count; exactly one signer required")
+              # Match the certificate field, never the public-key digest or a fixed signer prefix.
+              values = []
+              for line in text.splitlines():
+                  if "certificate SHA-256 digest:" in line:
+                      value = line.split("certificate SHA-256 digest:", 1)[1].strip().lower()
+                      if not re.fullmatch(r"[0-9a-f]{64}", value):
+                          raise ValueError("Malformed certificate SHA-256")
+                      values.append(value)
+              if not values or set(values) != {expected}:
+                  raise ValueError("Missing, ambiguous or unexpected certificate SHA-256")
+          
+          # Exercise both known formats and fail-closed cases on the same runner.
+          for prefix in ["Signer #1", "V2 Signer:"]:
+              verify_certificate("Number of signers: 1\n" + prefix + " certificate SHA-256 digest: " + expected)
+          verify_certificate("Number of signers: 1\nV2 Signer: certificate SHA-256 digest: " + expected +
+                             "\nV3 Signer: certificate SHA-256 digest: " + expected.upper())
+          for bad in [
+              "Number of signers: 1\n",
+              "V2 Signer: certificate SHA-256 digest: " + expected,
+              "Number of signers: 2\nV2 Signer: certificate SHA-256 digest: " + expected,
+              "Number of signers: 1\nNumber of signers: 1\nV2 Signer: certificate SHA-256 digest: " + expected,
+              "Number of signers: 1\nV2 Signer: public key SHA-256 digest: " + expected,
+              "Number of signers: 1\nV2 Signer: certificate SHA-256 digest: " + "0" * 64,
+              "Number of signers: 1\nV2 Signer: certificate SHA-256 digest: invalid",
+              "Number of signers: 1\nV2 Signer: certificate SHA-256 digest: " + expected +
+                  "\nV3 Signer: certificate SHA-256 digest: " + "0" * 64,
+          ]:
+              try:
+                  verify_certificate(bad)
+              except ValueError:
+                  pass
+              else:
+                  raise AssertionError("Unsafe certificate accepted")
+          print("Certificate parser: 3 positive and 8 negative checks passed")
+          verify_certificate(Path("certificate.txt").read_text())
+          manifest = json.loads(Path("release-manifest.json").read_text())
+          apk = Path("FortGPS_Field_2.0.0-alpha2.apk")
+          assert manifest["signer_certificate_sha256"] == expected
+          assert manifest["source_commit"] == "1a250d9364b0c13fbeff6274ac055f663fb4cd51"
+          assert manifest["apk"]["name"] == apk.name
+          assert manifest["apk"]["size_bytes"] == apk.stat().st_size
+          assert manifest["apk"]["sha256"] == hashlib.sha256(apk.read_bytes()).hexdigest()
+          print("Actual apksigner certificate and original APK manifest identity verified")
+          PY
+      - name: Publish and verify exact prerelease assets
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: rznratn-sys/fortgps-field
@@ -28,10 +79,32 @@ jobs:
         run: |
           set -euo pipefail
           cd delivery/alpha2
-          gh release create v2.0.0-alpha2 --target 1a250d9364b0c13fbeff6274ac055f663fb4cd51 --title 'FortGPS Field 2.0.0-alpha2' --prerelease --notes-file RELEASE_NOTES.md FortGPS_Field_2.0.0-alpha2.apk SHA256SUMS release-manifest.json INSTALL.md TEST_REPORT.md
-          gh release view v2.0.0-alpha2 --json url,assets
-      - name: Remove delivery-only branch after successful publication
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: rznratn-sys/fortgps-field
-        run: gh api --method DELETE repos/rznratn-sys/fortgps-field/git/refs/heads/field-2-alpha2-delivery-20261031
+          tag=v2.0.0-alpha2
+          source=1a250d9364b0c13fbeff6274ac055f663fb4cd51
+          assets=(FortGPS_Field_2.0.0-alpha2.apk SHA256SUMS release-manifest.json INSTALL.md TEST_REPORT.md RELEASE_NOTES.md DEBUG_ALPHA1_TO_RELEASE_ALPHA2.md)
+          cat RELEASE_NOTES.md > "$RUNNER_TEMP/alpha2-notes.md"
+          printf '\n\n## Samsung s debug alpha1 — před instalací\n\n' >> "$RUNNER_TEMP/alpha2-notes.md"
+          cat DEBUG_ALPHA1_TO_RELEASE_ALPHA2.md >> "$RUNNER_TEMP/alpha2-notes.md"
+          if ! gh release view "$tag" --json url > "$RUNNER_TEMP/existing-release.json"; then
+            # Creation is draft-only. A network/permission error cannot overwrite an existing release.
+            gh release create "$tag" --target "$source" --title 'FortGPS Field 2.0.0-alpha2' --prerelease --draft --notes-file "$RUNNER_TEMP/alpha2-notes.md" "${assets[@]}"
+          fi
+          test "$(gh release view "$tag" --json targetCommitish --jq .targetCommitish)" = "$source"
+          test "$(gh release view "$tag" --json isPrerelease --jq .isPrerelease)" = true
+          downloaded=$(mktemp -d)
+          gh release download "$tag" --dir "$downloaded"
+          for asset in "${assets[@]}"; do cmp "$asset" "$downloaded/$asset"; done
+          test "$(find "$downloaded" -maxdepth 1 -type f | wc -l)" -eq "${#assets[@]}"
+          (cd "$downloaded" && sha256sum -c SHA256SUMS)
+          # Publish only after reading back and verifying every asset. Never clobber assets.
+          if test "$(gh release view "$tag" --json isDraft --jq .isDraft)" = true; then
+            gh release edit "$tag" --draft=false
+          fi
+          test "$(gh api "repos/$GH_REPO/commits/$tag" --jq .sha)" = "$source"
+          public=$(mktemp -d)
+          for asset in "${assets[@]}"; do
+            curl --fail --silent --show-error --location --retry 5 --retry-all-errors "https://github.com/$GH_REPO/releases/download/$tag/$asset" --output "$public/$asset"
+            cmp "$asset" "$public/$asset"
+          done
+          (cd "$public" && sha256sum -c SHA256SUMS)
+          gh release view "$tag" --json url,isDraft,isPrerelease,assets
