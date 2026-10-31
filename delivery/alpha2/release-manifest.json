@@ -1,0 +1,39 @@
+{
+  "version": "2.0.0-alpha2",
+  "package": "cz.fortgps.field",
+  "version_code": 20001,
+  "build_type": "release",
+  "source_commit": "1a250d9364b0c13fbeff6274ac055f663fb4cd51",
+  "source_tree": "65ad22ba4c894ff31db322253b13ae436bd1bdfc",
+  "embedded_vcs_info": {
+    "META-INF/version-control-info.textproto": "generate_error_reason: NO_SUPPORTED_VCS_FOUND\n"
+  },
+  "source_provenance": "Verified clean git worktree at build; external manifest pins commit because AGP did not embed a VCS revision",
+  "apk": {
+    "name": "FortGPS_Field_2.0.0-alpha2.apk",
+    "size_bytes": 8770377,
+    "sha256": "e4ce15bf99a2196327dae3ceb8b379cff8649021ad8bbf49a9731d746e3f634d"
+  },
+  "signer_certificate_sha256": "ef2ee10dc4833159a50f0b550e8eb4eeac53f21ef47079136b5151990b74fb72",
+  "compatible_with_original_alpha1_release": true,
+  "compatible_with_unknown_actions_debug": null,
+  "tests": {
+    "kotlin_jvm_robolectric_passed": 34,
+    "python_contract_passed": 11,
+    "android_lint_passed": true,
+    "real_jpeg_independent_exiftool": true,
+    "real_android_device_verified": false
+  },
+  "not_tested": [
+    "Samsung MediaStore write consent and denial",
+    "process-kill recovery on physical Android",
+    "disk-full and permission-revocation during actual Android write",
+    "alpha1 phone upgrade and alpha2 live Drive upload"
+  ],
+  "limitations": [
+    "MediaStore writes are not atomic; durable backup is retained for recovery",
+    "Legacy sessions without timezone require manual confirmation for offset-less EXIF",
+    "Motion Photo, MPF, extended XMP and JPEG over 16 MiB refused"
+  ],
+  "secrets_included": false
+}

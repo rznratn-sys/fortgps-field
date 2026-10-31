@@ -1,0 +1,37 @@
+name: Publish signed Field alpha2
+on:
+  push:
+    branches: ['field-2-alpha2-delivery-20261031']
+permissions:
+  contents: write
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify exact delivery bytes and original release identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd delivery/alpha2
+          sha256sum -c SHA256SUMS
+          signer=$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -1)
+          test -n "$signer"
+          "$signer" verify --verbose --print-certs FortGPS_Field_2.0.0-alpha2.apk | tee certificate.txt
+          grep -F 'Signer #1 certificate SHA-256 digest: ef2ee10dc4833159a50f0b550e8eb4eeac53f21ef47079136b5151990b74fb72' certificate.txt
+      - name: Publish prerelease with one clearly named installation APK
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: rznratn-sys/fortgps-field
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd delivery/alpha2
+          gh release create v2.0.0-alpha2 --target 1a250d9364b0c13fbeff6274ac055f663fb4cd51 --title 'FortGPS Field 2.0.0-alpha2' --prerelease --notes-file RELEASE_NOTES.md FortGPS_Field_2.0.0-alpha2.apk SHA256SUMS release-manifest.json INSTALL.md TEST_REPORT.md
+          gh release view v2.0.0-alpha2 --json url,assets
+      - name: Remove delivery-only branch after successful publication
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: rznratn-sys/fortgps-field
+        run: gh api --method DELETE repos/rznratn-sys/fortgps-field/git/refs/heads/field-2-alpha2-delivery-20261031
