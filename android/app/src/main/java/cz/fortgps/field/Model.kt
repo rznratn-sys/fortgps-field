@@ -49,7 +49,9 @@ val relations = linkedMapOf("on_roof" to "Na stropě", "at_entrance" to "U vstup
     val legacy_record_json: String? = null,
     val photo_timezone_start: String? = null, val photo_timezone_end: String? = null,
     val xmp_result: XmpResult? = null,
-    val photo_clock_epoch_start: Long? = null, val photo_clock_epoch_end: Long? = null
+    val photo_clock_epoch_start: Long? = null, val photo_clock_epoch_end: Long? = null,
+    val photo_boundary_policy: String? = null,
+    val photo_started_elapsed_nanos: Long? = null, val photo_ended_elapsed_nanos: Long? = null
 ) {
     fun validate() {
         require(UUID.fromString(session_id).toString() == session_id)

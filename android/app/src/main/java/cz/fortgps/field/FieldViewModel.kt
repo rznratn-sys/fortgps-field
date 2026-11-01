@@ -40,38 +40,121 @@ class FieldViewModel(app: Application) : AndroidViewModel(app) {
     val busy = MutableStateFlow(false)
     private var captureJob: Job? = null
     fun run(block: suspend () -> Unit) {
-        if (busy.value) return
+        if (busy.value || pendingCapture.value != null) return
         captureJob = viewModelScope.launch {
             busy.value = true
             try { block() }
-            catch (_: TimeoutCancellationException) { message.value = "Poloha nebyla do 35 s dostupná. Relace zůstala uložená; lze opakovat nebo uzavřít bez bodu." }
+            catch (_: TimeoutCancellationException) { message.value = "Operace byla přerušena. Uložená data zůstávají." }
             catch (e: CancellationException) { message.value = "Měření zastaveno. Uložená data zůstávají."; throw e }
             catch (e: Exception) { message.value = e.message ?: "Operace selhala. Uložená data zůstávají." }
             finally { busy.value = false }
         }
     }
-    fun stopMeasurement() { captureJob?.cancel() }
-    fun capture(action: String, type: String, relation: String, note: String) = run {
-        val active = db.dao().active()?.let { wire.decodeFromString<FieldSession>(it.payload) }
-        val id = if (action == "finish") requireNotNull(active).session_id else uuid()
-        message.value = "Zjišťuji novou polohu…"
-        val m = LocationCapture(getApplication()).measure(id, if (action == "start") "first_contact" else "object_survey")
-        when (action) {
-            "start" -> repo.create(SessionEngine.start(m).copy(object_type = type, note = note, photo_clock_epoch_start = clockEpoch(getApplication())).checked())
-            "finish" -> repo.change(id) { SessionEngine.finish(it, m, type, relation, note, Instant.now().toString()).copy(photo_clock_epoch_end = clockEpoch(getApplication())) }
-            "standalone" -> repo.create(SessionEngine.standalone(m, type, relation, note))
-            else -> error("Neznámá akce")
-        }
-        message.value = "Uloženo v telefonu. Přesnost ±${m.horizontal_accuracy_m?.toInt() ?: "?"} m."
-        scheduleSync(getApplication(), true)
-        if(action=="finish") {
-            // GPS commit and outbox precede all photo work. A media failure cannot undo them.
-            try {
-                db.dao().putXmp(XmpRow(id)); XmpWorker.enqueue(getApplication(),id)
-                message.value += " XMP čeká na kontrolu; výsledek je v historii relací."
-            } catch(e: Exception) { message.value += " XMP se nepodařilo zařadit: ${e.message}. Opakuj v historii." }
+    fun stopMeasurement() { if (pendingCapture.value != null) cancelMeasurement() else captureJob?.cancel() }
+    val pendingCapture = MutableStateFlow<PendingCapture?>(null)
+    val gnss = MutableStateFlow<GnssState?>(null)
+    private val location = LocationCapture(app)
+    private var gnssTicker: Job? = null
+    private var foreground = false
+    private var committing = false
+    fun capture(action: String, type: String, relation: String, note: String) {
+        if (pendingCapture.value != null || busy.value) return
+        val boundary = Instant.now().toString()
+        val elapsed = android.os.SystemClock.elapsedRealtimeNanos()
+        val epoch = clockEpoch(getApplication())
+        val zone = java.time.ZoneId.systemDefault().id
+        run {
+            require(action in setOf("start", "finish", "standalone"))
+            val active = db.dao().active()
+            require(if (action == "finish") active != null else active == null) { "Stav otevřené relace se změnil." }
+            pendingCapture.value = PendingCapture(action, if (action == "finish") active!!.id else uuid(),
+                type, relation, note, boundary, elapsed, epoch, zone)
+            gnss.value = GnssState(elapsed)
+            if (foreground) resumeGnss()
         }
     }
+    fun measurementForeground(visible: Boolean) {
+        foreground = visible
+        if (visible) resumeGnss() else pauseGnss()
+    }
+    private fun pauseGnss() {
+        location.stop(); gnssTicker?.cancel(); gnssTicker = null
+        gnss.value = gnss.value?.copy(foreground=false, lost=true, now=android.os.SystemClock.elapsedRealtimeNanos())
+    }
+    fun resumeGnss() {
+        val p = pendingCapture.value ?: return
+        if (!foreground || committing) return
+        pauseGnss()
+        val after = android.os.SystemClock.elapsedRealtimeNanos()
+        gnss.value = gnss.value?.copy(acceptAfter=after, now=after, foreground=true, lost=true, error=null)
+        try {
+            location.start(p.sessionId, if (p.action == "start") "first_contact" else "object_survey", { m ->
+                gnss.value = gnss.value?.receive(m, android.os.SystemClock.elapsedRealtimeNanos())
+            }, {
+                gnss.value = gnss.value?.copy(lost=true, acceptAfter=android.os.SystemClock.elapsedRealtimeNanos())
+            })
+            gnssTicker = viewModelScope.launch {
+                while (isActive) {
+                    val problem = runCatching { location.problem() }.getOrElse { it.message ?: "Služba polohy selhala" }
+                    gnss.value = gnss.value?.copy(now=android.os.SystemClock.elapsedRealtimeNanos(), error=problem)
+                    if (problem != null) {
+                        location.stop()
+                        gnss.value = gnss.value?.copy(lost=true, acceptAfter=android.os.SystemClock.elapsedRealtimeNanos())
+                        break
+                    }
+                    delay(500)
+                }
+            }
+        } catch (e: Exception) { gnss.value = gnss.value?.copy(error=e.message ?: "GNSS služba selhala", lost=true) }
+    }
+    fun cancelMeasurement() {
+        if (busy.value) return
+        pauseGnss(); pendingCapture.value=null; gnss.value=null
+        message.value="Měření zrušeno. Rozpracovaná relace zůstává otevřená."
+    }
+    fun confirmFix(expectedId: String) {
+        if (busy.value) return
+        val p = pendingCapture.value ?: return
+        val now = Instant.now().toString()
+        val elapsed = android.os.SystemClock.elapsedRealtimeNanos()
+        val m = try {
+            location.problem()?.let { error(it) }
+            requireNotNull(gnss.value).confirmed(expectedId, elapsed)
+        } catch (e: Exception) { message.value=e.message ?: "Fix nelze uložit"; return }
+        // Latch synchronously before launching IO: double taps cannot create two commits.
+        busy.value=true; committing=true
+        pauseGnss()
+        captureJob=viewModelScope.launch {
+            try {
+                when (p.action) {
+                    "start" -> repo.create(SessionEngine.start(m).copy(started_at=now, created_at=now, updated_at=now,
+                        photo_timezone_start=java.time.ZoneId.systemDefault().id,
+                        object_type=p.type, note=p.note, photo_clock_epoch_start=clockEpoch(getApplication()),
+                        photo_boundary_policy="manual_gnss_v1", photo_started_elapsed_nanos=elapsed).checked())
+                    "finish" -> repo.change(p.sessionId) { old ->
+                        SessionEngine.finish(old, m, p.type, p.relation, p.note, now).copy(
+                            ended_at=p.photoEndAt, photo_timezone_end=p.timezone,
+                            photo_clock_epoch_end=p.clockEpoch,
+                            photo_boundary_policy=if (old.photo_boundary_policy == "manual_gnss_v1") "manual_gnss_v1" else "mixed_alpha2_alpha3",
+                            photo_ended_elapsed_nanos=p.photoEndElapsed).checked()
+                    }
+                    "standalone" -> repo.create(SessionEngine.standalone(m, p.type, p.relation, p.note).copy(created_at=now, updated_at=now).checked())
+                }
+                pendingCapture.value=null; gnss.value=null
+                message.value="Uloženo v telefonu. GNSS ±${m.horizontal_accuracy_m} m."
+                scheduleSync(getApplication(), true)
+                if (p.action == "finish") {
+                    try {
+                        db.dao().putXmp(XmpRow(p.sessionId)); XmpWorker.enqueue(getApplication(),p.sessionId)
+                        message.value += " XMP čeká na kontrolu; výsledek je v historii relací."
+                    } catch(e: Exception) { message.value += " XMP se nepodařilo zařadit: ${e.message}. Opakuj v historii." }
+                }
+            } catch(e: Exception) {
+                message.value=e.message ?: "Uložení selhalo; relace zůstala zachovaná."
+            } finally { busy.value=false; committing=false; if(pendingCapture.value != null && foreground) resumeGnss() }
+        }
+    }
+    override fun onCleared() { location.stop(); super.onCleared() }
     fun closeWithoutSurvey(type: String, relation: String, note: String) = run {
         val id = requireNotNull(db.dao().active()).id
         repo.change(id) { SessionEngine.finish(it, null, type, relation, note, Instant.now().toString()) }
@@ -135,7 +218,7 @@ class FieldViewModel(app: Application) : AndroidViewModel(app) {
             imported.forEach { s ->
                 val old = db.dao().get(s.session_id)
                 if (old == null) repo.create(s)
-                else require(old.payload == s.json()) { "UUID existuje s jiným obsahem. Import se neprovedl." }
+                else require(wire.decodeFromString<FieldSession>(old.payload) == s) { "UUID existuje s jiným obsahem. Import se neprovedl." }
             }
         }
         message.value = "Importováno/ověřeno ${imported.size} záznamů."

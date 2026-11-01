@@ -18,7 +18,7 @@ class MigrationTest {
         val file=c.getDatabasePath(name);file.parentFile!!.mkdirs()
         val schema=JSONObject(javaClass.getResource("/room-v1.json")!!.readText()).getJSONObject("database")
         val s=XmpTest().session();val oldJson=JSONObject(s.json())
-        listOf("xmp_result","photo_timezone_start","photo_timezone_end","photo_clock_epoch_start","photo_clock_epoch_end").forEach(oldJson::remove)
+        listOf("xmp_result","photo_timezone_start","photo_timezone_end","photo_clock_epoch_start","photo_clock_epoch_end","photo_boundary_policy","photo_started_elapsed_nanos","photo_ended_elapsed_nanos").forEach(oldJson::remove)
         val payload=oldJson.toString()
         SQLiteDatabase.openOrCreateDatabase(file,null).use {old ->
             val entities=schema.getJSONArray("entities")

@@ -70,7 +70,9 @@ class MainActivity : ComponentActivity() {
         }
     }
     private val permissions = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
-        vm.message.value = "Oprávnění vyhodnoceno. Pro nové měření stiskni znovu tlačítko."
+        vm.message.value = if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED)
+            "Přesná poloha povolena. Pro nové GNSS měření stiskni znovu tlačítko."
+        else "GNSS měření vyžaduje oprávnění k přesné poloze. Přibližná poloha nestačí; povol přesnou polohu v nastavení aplikace."
     }
     private val authorizeResult = registerForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { result ->
         try {
@@ -93,7 +95,7 @@ class MainActivity : ComponentActivity() {
             MaterialTheme(colorScheme = darkColorScheme(primary = Color(0xFFB7DF7C), onPrimary = Color(0xFF122515),
                 background = Color(0xFF101D19), surface = Color(0xFF20352E), onSurface = Color(0xFFF0F5ED))) {
                 FieldScreen(vm, onXmpPermission = ::requestXmp, onCapture = { a, t, r, n ->
-                    if (checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED)
+                    if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED)
                         permissions.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
                     else vm.capture(a, t, r, n)
                 }, onConnect = ::connect, onPhotos = { id ->
@@ -103,6 +105,8 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+    override fun onStart() { super.onStart(); vm.measurementForeground(true) }
+    override fun onStop() { vm.measurementForeground(false); super.onStop() }
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState); outState.putString("photoSessionId", photoSessionId); outState.putString("xmpPermissionSession",xmpPermissionSession)
     }
@@ -159,8 +163,14 @@ private fun statusLabel(s: String) = when (s) {
     val queue by vm.queue.collectAsStateWithLifecycle()
     val xmp by vm.xmpOperations.collectAsStateWithLifecycle()
     val choices by vm.xmpChoices.collectAsStateWithLifecycle()
+    val pending by vm.pendingCapture.collectAsStateWithLifecycle()
+    val gnss by vm.gnss.collectAsStateWithLifecycle()
     val busy by vm.busy.collectAsStateWithLifecycle()
     val message by vm.message.collectAsStateWithLifecycle()
+    if (pending != null) {
+        GnssScreen(gnss, busy, message, vm::confirmFix, vm::cancelMeasurement, vm::resumeGnss)
+        return
+    }
     val context=androidx.compose.ui.platform.LocalContext.current
     LaunchedEffect(xmp) {
         xmp.filter { it.state=="permission_required" }.forEach { op ->
@@ -184,7 +194,7 @@ private fun statusLabel(s: String) = when (s) {
     Surface(modifier = Modifier.fillMaxSize()) {
         Column(Modifier.safeDrawingPadding().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text("FortGPS Field", style = MaterialTheme.typography.headlineLarge)
-            Text("2.0.0-alpha2 • Terénní důkazy", color = MaterialTheme.colorScheme.primary)
+            Text("2.0.0-alpha3 • Terénní důkazy", color = MaterialTheme.colorScheme.primary)
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text(if (active == null) "ŽÁDNÁ OTEVŘENÁ RELACE" else statusLabel(active.session_status), style = MaterialTheme.typography.titleMedium)
@@ -286,4 +296,32 @@ private fun statusLabel(s: String) = when (s) {
             TextButton(onClick = { prefs.edit().putBoolean("enabled", false).apply(); onDismiss() }) { Text("Pozastavit automatické odesílání") }
         }
     }, confirmButton = { TextButton(onClick = { onConnect(email, folder) }) { Text("Připojit a ověřit") } }, dismissButton = { TextButton(onClick = onDismiss) { Text("Zpět") } })
+}
+
+@Composable internal fun GnssScreen(state: GnssState?, busy: Boolean, message: String,
+    onConfirm: (String) -> Unit, onCancel: () -> Unit, onRetry: () -> Unit) {
+    androidx.activity.compose.BackHandler(enabled = true) { if (!busy) onCancel() }
+    Surface(Modifier.fillMaxSize()) {
+        Column(Modifier.safeDrawingPadding().verticalScroll(rememberScrollState()).padding(16.dp),
+            verticalArrangement=Arrangement.spacedBy(14.dp)) {
+            Text("GNSS měření", style=MaterialTheme.typography.headlineLarge)
+            Text(state?.label ?: "Připravuji měření…", style=MaterialTheme.typography.titleLarge)
+            Text("Poskytovatel: GPS_PROVIDER (satelitní GNSS)\nČekej libovolně dlouho. Uloží se až ručně potvrzený aktuální fix.")
+            state?.current?.let { m ->
+                Text("WGS84: ${m.latitude}, ${m.longitude}", fontSize=22.sp)
+                Text("Udávaná přesnost: ±${m.horizontal_accuracy_m} m", fontSize=22.sp)
+                Text("Stáří fixu: ${String.format(java.util.Locale.ROOT, "%.1f", state.ageSeconds)} s\nPoskytovatel: ${m.location_provider}\nČas fixu: ${m.measured_at}")
+                if (!state.canSave) Text("Poslední známý fix – nyní neplatný k uložení", color=MaterialTheme.colorScheme.error)
+                if ((m.horizontal_accuracy_m ?: 0.0) > 50.0) Text("Velká nejistota polohy. Zvaž další čekání; rozhodnutí je na tobě.", color=MaterialTheme.colorScheme.error)
+            }
+            Text("Nejlepší udávaná přesnost v tomto měření: ${state?.bestAccuracy?.let { "±$it m" } ?: "zatím žádná"}\nPouze informace; historický nejlepší fix se neukládá.")
+            val fixId=state?.current?.measurement_id
+            BigButton("Uložit tento fix", !busy && state?.canSave == true) { fixId?.let(onConfirm) }
+            if (state?.error != null) BigButton("Znovu připojit GNSS", !busy, onRetry)
+            OutlinedButton(onClick=onCancel, enabled=!busy, modifier=Modifier.fillMaxWidth().heightIn(min=64.dp)) { Text("Zrušit měření") }
+            if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
+            Text(message)
+            Text("Fix starší než 10 s se neukládá. Po návratu z pozadí je potřeba nový fix. Přesnost udává Android; není to ověřená chyba polohy.")
+        }
+    }
 }

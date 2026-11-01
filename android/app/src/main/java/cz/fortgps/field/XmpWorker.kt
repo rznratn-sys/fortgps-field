@@ -100,7 +100,7 @@ class XmpService(private val c: Context) {
             require(sha256(media.bytes(uri))==r.beforeHash) { "Fotografii mezitím změnila jiná aplikace" }
             write(uri,after)
             val actual=media.bytes(uri)
-            require(sha256(actual)==r.afterHash); JpegGuard.verify(before,actual); require(FortXmp.read(actual)==FortXmp.values(s))
+            require(sha256(actual)==r.afterHash); JpegGuard.verify(before,actual); require(FortXmp.matches(FortXmp.read(actual),s))
             state(r.copy(state="verified",message="GPS uloženo. XMP zapsáno: ${r.name}",backupPath=null))
             cleanup(id)
         } catch(e: Exception) {
@@ -121,7 +121,7 @@ class XmpService(private val c: Context) {
         val current=runCatching { media.bytes(uri) }.getOrNull()
         if(current!=null && sha256(current)==r.afterHash) {
             JpegGuard.verify(before,current)
-            require(FortXmp.read(current)==FortXmp.values(session(r.sessionId)))
+            require(FortXmp.matches(FortXmp.read(current),session(r.sessionId)))
             state(r.copy(state="verified",message="XMP ověřeno po obnovení aplikace: ${r.name}",backupPath=null))
         } else {
             if(current==null || sha256(current)!=r.beforeHash) {

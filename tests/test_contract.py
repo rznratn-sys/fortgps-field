@@ -47,4 +47,11 @@ class ContractTest(unittest.TestCase):
             self.assertEqual(before,p.read_bytes())
             with self.assertRaises(ValueError): mod.write_once(p,{"test":2})
 
+
+class Alpha3ContractTest(unittest.TestCase):
+    def test_additive_gnss_photo_boundaries(self):
+        r=json.loads((ROOT/'tests/fixtures/session-2.0.json').read_text())
+        r.update(photo_boundary_policy='manual_gnss_v1',photo_started_elapsed_nanos=100,photo_ended_elapsed_nanos=200)
+        self.assertEqual('manual_gnss_v1',mod.load_field(json.dumps(r).encode())['photo_boundary_policy'])
+
 if __name__ == "__main__": unittest.main()

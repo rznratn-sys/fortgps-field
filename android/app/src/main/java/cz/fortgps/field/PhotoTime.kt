@@ -33,11 +33,25 @@ object PhotoTime {
         require(s.photo_clock_epoch_start == s.photo_clock_epoch_end)
         val first = s.measurements.single { it.measurement_role == "first_contact" }
         val last = s.measurements.single { it.measurement_role == "object_survey" }
-        require(first.measured_at == s.started_at && last.measured_at == s.ended_at)
-        require(s.measurements.none { Duration.between(Instant.parse(it.measured_at), Instant.parse(it.created_at)).abs() > Duration.ofSeconds(5) || it.is_mock == true })
-        if (first.elapsed_realtime_nanos != null && last.elapsed_realtime_nanos != null) {
-            val mono = last.elapsed_realtime_nanos - first.elapsed_realtime_nanos
-            require(mono > 0 && Duration.between(start,end).minusNanos(mono).abs() <= Duration.ofSeconds(2))
+        if (s.photo_boundary_policy == null) {
+            require(first.measured_at == s.started_at && last.measured_at == s.ended_at)
+            require(s.measurements.none { Duration.between(Instant.parse(it.measured_at), Instant.parse(it.created_at)).abs() > Duration.ofSeconds(5) || it.is_mock == true })
+            if (first.elapsed_realtime_nanos != null && last.elapsed_realtime_nanos != null) {
+                val mono = last.elapsed_realtime_nanos - first.elapsed_realtime_nanos
+                require(mono > 0 && Duration.between(start,end).minusNanos(mono).abs() <= Duration.ofSeconds(2))
+            }
+        } else {
+            require(s.photo_boundary_policy == "manual_gnss_v1")
+            val startMono = requireNotNull(s.photo_started_elapsed_nanos)
+            val endMono = requireNotNull(s.photo_ended_elapsed_nanos)
+            require(endMono > startMono)
+            require(Duration.between(start,end).minusNanos(endMono-startMono).abs() <= Duration.ofSeconds(2))
+            // Validate each GNSS clock against its own photo boundary, not against waiting time.
+            for ((m, wall, mono) in listOf(Triple(first,start,startMono), Triple(last,end,endMono))) {
+                val t = requireNotNull(m.elapsed_realtime_nanos)
+                require(m.location_provider == "gps" && m.is_mock != true)
+                require(Duration.between(wall,Instant.parse(m.measured_at)).minusNanos(t-mono).abs() <= Duration.ofSeconds(2))
+            }
         }
         true
     }.getOrDefault(false)

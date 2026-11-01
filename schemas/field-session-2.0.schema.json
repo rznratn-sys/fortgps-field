@@ -179,6 +179,31 @@
         "integer",
         "null"
       ]
+    },
+    "photo_boundary_policy": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        null,
+        "manual_gnss_v1",
+        "mixed_alpha2_alpha3"
+      ]
+    },
+    "photo_started_elapsed_nanos": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "photo_ended_elapsed_nanos": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
     }
   },
   "required": [

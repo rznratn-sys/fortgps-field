@@ -1,0 +1,36 @@
+{
+  "exiftool_version": "13.60",
+  "before_sha256": "1014543916806016ec533c6436f84114f563985a265f360346f5a88ed34311d4",
+  "after_sha256": "5dace5125543afe34181f746b836cd6313f8a40e45b03e7e2b57473a2b9e07e1",
+  "fixture_note": "Supplied real JPEG already has alpha2 XMP. New-write fixture removes only FortGPS XMP on an in-memory copy; original is never changed.",
+  "exif_gps_present_in_original": true,
+  "original_exif_bytes_unchanged": true,
+  "non_xmp_metadata_unchanged": true,
+  "jpeg_scan_eoi_bytes_unchanged": true,
+  "decoded_pixels_unchanged": true,
+  "sef_version": 107,
+  "sef_blocks": {
+    "Color_Display_P3": {
+      "type": 213975040,
+      "length": 27,
+      "sha256": "bed69b15f13e1c64d60db67cb48e49c439524f7daf1e741a863ba11bcdbc2b1d"
+    },
+    "Image_UTC_Data": {
+      "type": 167837696,
+      "length": 35,
+      "sha256": "8ee9264806fb1d75cf61dc81f2db4d1754da88d88a44732dfd32b73bbcd190b9"
+    },
+    "MCC_Data": {
+      "type": 178323456,
+      "length": 19,
+      "sha256": "4955f1f9f31d563b9a5ac739dbcfc2275f30613ad844b8a20054090ec5ba3f61"
+    },
+    "Camera_Capture_Mode_Info": {
+      "type": 207683584,
+      "length": 33,
+      "sha256": "bdf28b818b3bac9afebd951cd80bc9dd973a73910fd8c17b613f46514d73c22c"
+    }
+  },
+  "samsung_gallery_verified": false,
+  "specific_november_1_rejected_jpegs_verified": false
+}
