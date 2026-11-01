@@ -1,0 +1,122 @@
+{
+  "version": "2.0.0-alpha1",
+  "base_commit": "302b753959780d6c9ce777db3d713a73de58b735",
+  "android_source_tree_sha256": "67f234e8d38636df33fe2f8da3f5ce892150325ce734e24700c6b6e7788d90ae",
+  "apk_sha256": "261c80bdc2fb331035147ebca628e1ce4edd9c3a9d69c78478f68397b1ade682",
+  "apk_size_bytes": 8170716,
+  "package": "cz.fortgps.field",
+  "version_code": 20000,
+  "min_sdk": 26,
+  "target_sdk": 35,
+  "certificate_sha1": "b7c8490077670bec9594bf4cf66ab209a1431d8d",
+  "certificate_sha256": "ef2ee10dc4833159a50f0b550e8eb4eeac53f21ef47079136b5151990b74fb72",
+  "signing_verified": true,
+  "clean_build_result": "BUILD SUCCESSFUL",
+  "junit_tests": 24,
+  "python_contract_tests": 10,
+  "lint_errors": 0,
+  "lint_warnings": 5,
+  "actual_android_oauth_upload_tested": false,
+  "physical_phone_tested": false,
+  "instrumentation_apk_built": true,
+  "full_emulator_instrumentation_passed": false,
+  "production_registries_changed": false,
+  "source_files": [
+    {
+      "path": "android/app/build.gradle.kts",
+      "sha256": "7a9d539ade44676de1d2269e3da9b4eb5fd28a528a740f6a6a974ea892aeba62"
+    },
+    {
+      "path": "android/app/schemas/cz.fortgps.field.FieldDb/1.json",
+      "sha256": "a7544b99ed1bc0f1afbce45b9beb50a2bf3a52416f6fc79cbbab8146f8ff32c6"
+    },
+    {
+      "path": "android/app/src/androidTest/java/cz/fortgps/field/OfflineStoreTest.kt",
+      "sha256": "8733eae02015405aa53a1da195defd740a263cb73a5c6da1fe57ba8abeb693cf"
+    },
+    {
+      "path": "android/app/src/main/AndroidManifest.xml",
+      "sha256": "6211b88fe0154da58f3ee6237937cc6a827f9b1c578efac3949f5cb63e0e7ec5"
+    },
+    {
+      "path": "android/app/src/main/java/cz/fortgps/field/Drive.kt",
+      "sha256": "af0d908b5aae2a6605767fe34037218ccdefcb44fa5597fb227c1ed094508116"
+    },
+    {
+      "path": "android/app/src/main/java/cz/fortgps/field/FieldViewModel.kt",
+      "sha256": "c7d6f054674fac3ad20f05bf57843c8b847cc6e0c9f1cc32458f8dfe81b123fd"
+    },
+    {
+      "path": "android/app/src/main/java/cz/fortgps/field/Legacy.kt",
+      "sha256": "fcbc29d036f53ae840ce5039f7bc436f001f66c63a7da46cd5ce97746e4f9868"
+    },
+    {
+      "path": "android/app/src/main/java/cz/fortgps/field/LocationCapture.kt",
+      "sha256": "75c9965e6f1b6094dc0ec546b6d3d49062484d4b615e35274674440c52dda819"
+    },
+    {
+      "path": "android/app/src/main/java/cz/fortgps/field/MainActivity.kt",
+      "sha256": "d43e9f13b7b67da47f45c4b3fc4e444f4f1f80835b73cc2c171e4162fe607835"
+    },
+    {
+      "path": "android/app/src/main/java/cz/fortgps/field/Model.kt",
+      "sha256": "8d5fadfda91405582cee99b90678718fc43be06e4daaf125b526cfb3a3671660"
+    },
+    {
+      "path": "android/app/src/main/java/cz/fortgps/field/Store.kt",
+      "sha256": "9a73771d22e705d7ae14655ea88351bbb2f1358ba38de07ceaa04dcbd1b59dc2"
+    },
+    {
+      "path": "android/app/src/main/res/drawable/ic_field.xml",
+      "sha256": "516d282dc945ed3bbf7ec2c33f80f0afe54762e2c3e8239cbe2b2865da0eaf4d"
+    },
+    {
+      "path": "android/app/src/main/res/values/styles.xml",
+      "sha256": "4fa2d2066b895acc034b92f94c0a1237e6ee6f025fa1bdc80cb8396b9a285f94"
+    },
+    {
+      "path": "android/app/src/main/res/xml/data_extraction_rules.xml",
+      "sha256": "a0d81ccff94f23b8dfb475cbf11e99f16e1fea062d64c7d0a4537b117ef1d259"
+    },
+    {
+      "path": "android/app/src/test/java/cz/fortgps/field/DriveTest.kt",
+      "sha256": "dfebf4822b4e5e5e66c37a1357a40e07a6301a2bb31deb04124b13588726c85f"
+    },
+    {
+      "path": "android/app/src/test/java/cz/fortgps/field/RoomRestartTest.kt",
+      "sha256": "c424572976035fb7e5eff311de230ae24efd284fe8a2e8c493725291bd73495b"
+    },
+    {
+      "path": "android/app/src/test/java/cz/fortgps/field/SessionTest.kt",
+      "sha256": "39e7ca28bfed2b0630761e74eb186ef54ef8f2e721cc5ce62af1d6cbefcc6bf4"
+    },
+    {
+      "path": "android/build.gradle.kts",
+      "sha256": "5fc2821ed421184b1b0958ed5e373a507357175a2d46392fbdd04e480d537d25"
+    },
+    {
+      "path": "android/gradle.properties",
+      "sha256": "0cc66f8565a869c7a56174e75d944254a69015cfbfb9bec3f4762219adb7679f"
+    },
+    {
+      "path": "android/gradle/wrapper/gradle-wrapper.jar",
+      "sha256": "2db75c40782f5e8ba1fc278a5574bab070adccb2d21ca5a6e5ed840888448046"
+    },
+    {
+      "path": "android/gradle/wrapper/gradle-wrapper.properties",
+      "sha256": "3256e6a4bacbb04787b346d74b418734b03246092a15703cf2acd926c4b00e90"
+    },
+    {
+      "path": "android/gradlew",
+      "sha256": "a3648413b47ef77af21d5ebc36c687c7d103aaef3e17f33de7d4f080a6f300a3"
+    },
+    {
+      "path": "android/gradlew.bat",
+      "sha256": "57931b17dd228e5c24dac90e815d0bf82477e831a4618dfab4136f5446b42a9f"
+    },
+    {
+      "path": "android/settings.gradle.kts",
+      "sha256": "851999f2013615a97dbb9d62180596d3fdf489aaa831af5abbf0342ea2fbadbc"
+    }
+  ]
+}

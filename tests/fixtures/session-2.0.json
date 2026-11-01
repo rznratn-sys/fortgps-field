@@ -1,0 +1,42 @@
+{
+  "session_id": "12345678-1234-4234-8234-123456789abc",
+  "schema_version": "2.0",
+  "revision": 1,
+  "session_mode": "standalone",
+  "started_at": "2026-01-01T10:00:00Z",
+  "ended_at": "2026-01-01T10:00:00Z",
+  "created_at": "2026-01-01T10:00:00Z",
+  "updated_at": "2026-01-01T10:00:00Z",
+  "session_status": "standalone",
+  "object_type": "jednoduchy_bunkr",
+  "note": "Synthetic fixture, not a field observation",
+  "measurements": [
+    {
+      "measurement_id": "87654321-4321-4321-8321-cba987654321",
+      "session_id": "12345678-1234-4234-8234-123456789abc",
+      "measurement_role": "object_survey",
+      "measured_at": "2026-01-01T10:00:00Z",
+      "created_at": "2026-01-01T10:00:00Z",
+      "latitude": 0.0,
+      "longitude": 0.0,
+      "horizontal_accuracy_m": 20.0,
+      "altitude_m": null,
+      "vertical_accuracy_m": null,
+      "altitude_reference": null,
+      "position_relation": "safe_nearby",
+      "location_provider": "synthetic_test",
+      "elapsed_realtime_nanos": 1000000,
+      "is_mock": true,
+      "mean_sea_level_altitude_m": null,
+      "mean_sea_level_accuracy_m": null,
+      "mean_sea_level_reference": null
+    }
+  ],
+  "photo_associations": [],
+  "warnings": [
+    "mock_location"
+  ],
+  "verification_status": "unverified",
+  "source": "FortGPS Field Android",
+  "legacy_record_json": null
+}

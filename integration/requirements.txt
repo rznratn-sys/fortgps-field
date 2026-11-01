@@ -1,0 +1,2 @@
+# Spatial dependencies come from the selected published Spatial code release.
+jsonschema==4.25.1
