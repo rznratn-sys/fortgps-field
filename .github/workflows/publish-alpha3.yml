@@ -1,0 +1,190 @@
+name: Field release (build, isolated signing, verified publication)
+on:
+  pull_request:
+    paths: ['scripts/release/**', 'tests/test_release_pipeline.py', '.github/workflows/publish-alpha3.yml']
+  push:
+    paths: ['scripts/release/**', 'tests/test_release_pipeline.py', '.github/workflows/publish-alpha3.yml']
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: 'Sign and publish ONLY after owner recovery drill and environment approval'
+        type: boolean
+        default: false
+permissions:
+  contents: read
+concurrency:
+  group: field-release-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: false
+env:
+  PYTHONDONTWRITEBYTECODE: '1'
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          path: pipeline
+          persist-credentials: false
+      - name: Test release tooling (no secrets)
+        run: |
+          python3 -m pip install jsonschema==4.25.1
+          python3 -m unittest discover -s pipeline/tests -p test_release_pipeline.py -v
+      - name: Read approved source pin
+        id: plan
+        run: |
+          python3 - <<'PY'
+          import json, os, re
+          p=json.load(open('pipeline/scripts/release/plan.json'))
+          assert re.fullmatch('[0-9a-f]{40}', p['source_commit'])
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as f: f.write('source='+p['source_commit']+'\n')
+          PY
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: rznratn-sys/fortgps-field
+          ref: ${{ steps.plan.outputs.source }}
+          path: source
+          persist-credentials: false
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3
+        with:
+          packages: platform-tools
+      - run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+      - run: python3 -m pip install -r source/integration/requirements.txt
+      - name: Build and test approved source WITHOUT signing material
+        working-directory: source
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests -v > "$RUNNER_TEMP/python-tests.txt" 2>&1
+          cat "$RUNNER_TEMP/python-tests.txt"
+          cd android
+          ./gradlew --no-daemon :app:assembleDebug :app:testDebugUnitTest :app:assembleDebugAndroidTest :app:lintDebug :app:assembleRelease :app:lintRelease
+      - name: Collect only unsigned APK and public build evidence
+        run: |
+          set -euo pipefail
+          mkdir unsigned
+          cp source/android/app/build/outputs/apk/release/app-release-unsigned.apk unsigned/app-release-unsigned.apk
+          python3 pipeline/scripts/release/verify.py evidence --plan pipeline/scripts/release/plan.json --source source --python-report "$RUNNER_TEMP/python-tests.txt" --directory unsigned
+          cat unsigned/build-evidence.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: field-unsigned-${{ github.run_id }}-${{ github.run_attempt }}
+          path: unsigned/
+          if-no-files-found: error
+          retention-days: 7
+  sign:
+    needs: build
+    if: github.event_name == 'workflow_dispatch' && inputs.publish && github.repository == 'rznratn-sys/fortgps-field' && github.ref == 'refs/heads/main'
+    environment: field-release
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      FIELD_RELEASE_CERT_SHA256: ${{ vars.FIELD_RELEASE_CERT_SHA256 }}
+      FIELD_KEY_BACKUP_VERIFIED_AT: ${{ vars.FIELD_KEY_BACKUP_VERIFIED_AT }}
+    steps:
+      - name: Enforce owner-approved pipeline and recovery attestation
+        env:
+          APPROVED_PIPELINE: ${{ vars.FIELD_RELEASE_PIPELINE_SHA }}
+          BACKUP_CERT: ${{ vars.FIELD_KEY_BACKUP_CERT_SHA256 }}
+        run: |
+          python3 - <<'PY'
+          import datetime, os, re
+          e=os.environ
+          assert re.fullmatch('[0-9a-f]{40}', e['APPROVED_PIPELINE']) and e['APPROVED_PIPELINE']==e['GITHUB_SHA'], 'Pipeline commit not approved'
+          assert re.fullmatch('[0-9a-f]{64}', e['FIELD_RELEASE_CERT_SHA256']), 'Missing approved certificate'
+          assert e['BACKUP_CERT']==e['FIELD_RELEASE_CERT_SHA256'], 'Backup certificate mismatch'
+          date=datetime.datetime.strptime(e['FIELD_KEY_BACKUP_VERIFIED_AT'], '%Y-%m-%dT%H:%M:%SZ').replace(tzinfo=datetime.timezone.utc)
+          assert date <= datetime.datetime.now(datetime.timezone.utc), 'Invalid recovery attestation'
+          PY
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: field-unsigned-${{ github.run_id }}-${{ github.run_attempt }}
+          path: unsigned
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3
+        with:
+          packages: platform-tools
+      - run: sdkmanager 'build-tools;35.0.0'
+      - name: Sign prebuilt APK; never execute Gradle or application code here
+        env:
+          FIELD_RELEASE_KEYSTORE_BASE64: ${{ secrets.FIELD_RELEASE_KEYSTORE_BASE64 }}
+          FIELD_STORE_PASSWORD: ${{ secrets.FIELD_STORE_PASSWORD }}
+          FIELD_KEY_PASSWORD: ${{ secrets.FIELD_KEY_PASSWORD }}
+          FIELD_KEY_ALIAS: ${{ secrets.FIELD_KEY_ALIAS }}
+        run: bash scripts/release/sign.sh
+      - name: Verify identity and assemble public delivery
+        run: |
+          cp unsigned/build-evidence.json delivery/
+          cp docs/field2/release/INSTALL.md delivery/INSTALL.md
+          cp docs/field2/release/RELEASE_NOTES.md delivery/RELEASE_NOTES.md
+          python3 scripts/release/verify.py assemble --plan scripts/release/plan.json --directory delivery --tools "$ANDROID_HOME/build-tools/35.0.0"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: field-delivery-${{ github.run_id }}-${{ github.run_attempt }}
+          path: delivery/
+          if-no-files-found: error
+          retention-days: 7
+  publish:
+    needs: sign
+    environment: field-publication
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    env:
+      FIELD_RELEASE_CERT_SHA256: ${{ vars.FIELD_RELEASE_CERT_SHA256 }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: field-delivery-${{ github.run_id }}-${{ github.run_attempt }}
+          path: delivery
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3
+        with:
+          packages: platform-tools
+      - run: sdkmanager 'build-tools;35.0.0'
+      - name: Verify bundle and publish without replacing any release or tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: rznratn-sys/fortgps-field
+        run: bash scripts/release/publish.sh
+  public-readback:
+    needs: publish
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      FIELD_RELEASE_CERT_SHA256: ${{ vars.FIELD_RELEASE_CERT_SHA256 }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3
+        with:
+          packages: platform-tools
+      - run: sdkmanager 'build-tools;35.0.0'
+      - name: Download public assets on a fresh runner without release token
+        run: |
+          python3 scripts/release/public_readback.py --plan scripts/release/plan.json --directory downloaded
+          python3 scripts/release/verify.py bundle --plan scripts/release/plan.json --directory downloaded --tools "$ANDROID_HOME/build-tools/35.0.0"
