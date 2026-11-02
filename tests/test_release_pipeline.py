@@ -74,6 +74,19 @@ class ReleaseTests(unittest.TestCase):
             report.parent.mkdir(parents=True)
             report.write_text('<testsuite tests="1" failures="1"/>')
             with self.assertRaises(ValueError): v.evidence(p, p/'python.txt')
+            report.write_text('<testsuite tests="56" failures="0" errors="0" skipped="3"><testcase classname="Fixture" name="optional"><skipped/></testcase></testsuite>')
+            lint=p/'android/app/build/reports'; lint.mkdir(parents=True)
+            for variant in ['debug','release']:
+                (lint/f'lint-results-{variant}.xml').write_text('<issues><issue severity="Warning" id="GradleDependency"/></issues>')
+            (p/'python.txt').write_text('Ran 14 tests in 1s\nOK\n')
+            (p/'pipeline.txt').write_text('Ran 19 tests in 1s\nOK\n')
+            result=v.evidence(p,p/'python.txt',p/'pipeline.txt')
+            self.assertEqual(result['junit']['skipped'],3)
+            self.assertEqual(result['skipped_tests'],['Fixture.optional'])
+            self.assertEqual(result['pipeline_python_tests'],19)
+            self.assertEqual(result['lint']['release']['warning_ids'],{'GradleDependency':1})
+            (lint/'lint-results-release.xml').write_text('<issues><issue severity="Error" id="Fail"/></issues>')
+            with self.assertRaises(ValueError): v.evidence(p,p/'python.txt')
     def test_signing_missing_secrets_exits_without_files(self):
         env={key: value for key,value in os.environ.items() if not key.startswith('FIELD_')}
         with tempfile.TemporaryDirectory() as d:

@@ -23,3 +23,12 @@
 Při vydání tento soubor není kopírován do assetu. Pipeline vygeneruje vlastní
 TEST_REPORT.md z JUnit XML, debug/release lint XML a skutečných Python výsledků
 konkrétního build běhu, s přesným zdrojovým a pipeline commitem a ID Actions run.
+
+## Nově spuštěné CI
+
+Běh [41453567055](https://github.com/rznratn-sys/fortgps-field/actions/runs/41453567055)
+byl dokončen úspěšně: debug + instrumentační + unsigned release APK, 56 JUnit
+celkem (53 úspěšných, 3 přeskočené, 0 chyb/selhání), Python 14 + 19 úspěšných.
+Debug/release lint: každý 0 chyb, 29 varování. Oproti historickému lokálnímu
+55/1 zde chybějí dvě soukromé fixtures. Rozpis lint ID a skipped testů je nově
+součástí build-evidence.json. Signing/publikace/public readback byly skipped.

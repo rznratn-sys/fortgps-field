@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Public release validation. This program never reads signing secrets."""
 import argparse
+from collections import Counter
 import hashlib
 import json
 import os
@@ -60,29 +61,39 @@ def verify_apk(apk, plan, cert, tools):
     return sha1[0].lower()
 
 
-def evidence(root, python_report):
+def python_count(report):
+    py = report.read_text()
+    match = re.search(r'Ran (\d+) tests?', py)
+    if not match or not re.search(r'^OK(?:\s|$)', py, re.M) or re.search(r'^(FAILED|ERROR|FAIL):?', py, re.M):
+        raise ValueError('Missing or failing Python tests')
+    return int(match[1])
+
+
+def evidence(root, python_report, pipeline_report=None):
     reports = sorted((root/'android/app/build/test-results/testDebugUnitTest').glob('TEST-*.xml'))
     if not reports:
         raise ValueError('Missing JUnit reports')
     counts = dict.fromkeys(['tests', 'failures', 'errors', 'skipped'], 0)
+    skipped = []
     for path in reports:
         node = ET.parse(path).getroot()
         for key in counts:
             counts[key] += int(node.get(key, '0'))
+        skipped += [t.get('classname', '')+'.'+t.get('name', '') for t in node.findall('testcase') if t.find('skipped') is not None]
     if counts['tests'] <= counts['skipped'] or counts['failures'] or counts['errors']:
         raise ValueError('Missing or failing Android tests')
     lint = {}
     for variant in ['debug', 'release']:
         issues = ET.parse(root/f'android/app/build/reports/lint-results-{variant}.xml').getroot().findall('issue')
         lint[variant] = {'errors': sum(i.get('severity') in ['Error', 'Fatal'] for i in issues),
-                         'warnings': sum(i.get('severity') == 'Warning' for i in issues)}
+                         'warnings': sum(i.get('severity') == 'Warning' for i in issues),
+                         'warning_ids': dict(Counter(i.get('id') for i in issues if i.get('severity') == 'Warning'))}
         if lint[variant]['errors']:
             raise ValueError('Lint errors')
-    py = python_report.read_text()
-    match = re.search(r'Ran (\d+) tests?', py)
-    if not match or not re.search(r'^OK(?:\s|$)', py, re.M) or re.search(r'^(FAILED|ERROR|FAIL):?', py, re.M):
-        raise ValueError('Missing or failing Python tests')
-    return {'junit': counts, 'lint': lint, 'python_tests': int(match[1])}
+    result = {'junit': counts, 'skipped_tests': skipped, 'lint': lint, 'python_tests': python_count(python_report)}
+    if pipeline_report:
+        result['pipeline_python_tests'] = python_count(pipeline_report)
+    return result
 
 
 def file_names(plan):
@@ -119,6 +130,7 @@ def main():
     parser.add_argument('--directory', type=Path, required=True)
     parser.add_argument('--source', type=Path)
     parser.add_argument('--python-report', type=Path)
+    parser.add_argument('--pipeline-report', type=Path)
     parser.add_argument('--tools', type=Path)
     args = parser.parse_args()
     plan = json.loads(args.plan.read_text())
@@ -127,7 +139,7 @@ def main():
         if actual != plan['source_commit']:
             raise ValueError('Wrong source commit')
         subprocess.run(['git', '-C', str(args.source), 'diff', '--exit-code', 'HEAD'], check=True, stdout=subprocess.DEVNULL)
-        data = evidence(args.source, args.python_report)
+        data = evidence(args.source, args.python_report, args.pipeline_report)
         data['source_commit'] = actual
         (args.directory/'build-evidence.json').write_text(json.dumps(data, indent=2)+'\n')
         return
@@ -150,7 +162,8 @@ def main():
             f"# Alpha3 release verification\n\nSource: `{plan['source_commit']}`.\n"
             f"Pipeline: `{os.environ['GITHUB_SHA']}`; Actions run `{os.environ['GITHUB_RUN_ID']}`.\n\n"
             f"JUnit/Robolectric: {j['tests']} total, {j['tests']-j['skipped']} passed, {j['skipped']} skipped.\n"
-            f"Python: {data['python_tests']} passed. Lint: {json.dumps(data['lint'])}.\n\n"
+            f"Python source: {data['python_tests']} passed; pipeline: {data['pipeline_python_tests']} passed.\n"
+            f"Lint: {json.dumps(data['lint'])}. Skipped: {json.dumps(data['skipped_tests'])}.\n\n"
             "Release signature, package, version, SHA-256 and asset readback are pipeline gates.\n"
             "Physical Samsung installation, live GNSS, Gallery, actual migration and live Drive upload were not tested.\n"
             "Private backup/JPEG fixtures may be skipped; inspect the source test documentation.\n")

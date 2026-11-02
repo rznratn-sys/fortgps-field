@@ -21,6 +21,8 @@ jobs:
   build:
     runs-on: ubuntu-24.04
     timeout-minutes: 40
+    outputs:
+      artifact: ${{ steps.unsigned.outputs.artifact-id }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -28,8 +30,9 @@ jobs:
           persist-credentials: false
       - name: Test release tooling (no secrets)
         run: |
+          set -euo pipefail
           python3 -m pip install jsonschema==4.25.1
-          python3 -m unittest discover -s pipeline/tests -p test_release_pipeline.py -v
+          python3 -m unittest discover -s pipeline/tests -p test_release_pipeline.py -v 2>&1 | tee "$RUNNER_TEMP/pipeline-tests.txt"
       - name: Read approved source pin
         id: plan
         run: |
@@ -67,9 +70,10 @@ jobs:
           set -euo pipefail
           mkdir unsigned
           cp source/android/app/build/outputs/apk/release/app-release-unsigned.apk unsigned/app-release-unsigned.apk
-          python3 pipeline/scripts/release/verify.py evidence --plan pipeline/scripts/release/plan.json --source source --python-report "$RUNNER_TEMP/python-tests.txt" --directory unsigned
+          python3 pipeline/scripts/release/verify.py evidence --plan pipeline/scripts/release/plan.json --source source --python-report "$RUNNER_TEMP/python-tests.txt" --pipeline-report "$RUNNER_TEMP/pipeline-tests.txt" --directory unsigned
           cat unsigned/build-evidence.json
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        id: unsigned
         with:
           name: field-unsigned-${{ github.run_id }}-${{ github.run_attempt }}
           path: unsigned/
@@ -77,6 +81,8 @@ jobs:
           retention-days: 7
   sign:
     needs: build
+    outputs:
+      artifact: ${{ steps.delivery.outputs.artifact-id }}
     if: github.event_name == 'workflow_dispatch' && inputs.publish && github.repository == 'rznratn-sys/fortgps-field' && github.ref == 'refs/heads/main'
     environment: field-release
     runs-on: ubuntu-24.04
@@ -105,7 +111,8 @@ jobs:
           persist-credentials: false
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
-          name: field-unsigned-${{ github.run_id }}-${{ github.run_attempt }}
+          artifact-ids: ${{ needs.build.outputs.artifact }}
+          merge-multiple: true
           path: unsigned
       - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
         with:
@@ -129,6 +136,7 @@ jobs:
           cp docs/field2/release/RELEASE_NOTES.md delivery/RELEASE_NOTES.md
           python3 scripts/release/verify.py assemble --plan scripts/release/plan.json --directory delivery --tools "$ANDROID_HOME/build-tools/35.0.0"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        id: delivery
         with:
           name: field-delivery-${{ github.run_id }}-${{ github.run_attempt }}
           path: delivery/
@@ -150,7 +158,8 @@ jobs:
           persist-credentials: false
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
-          name: field-delivery-${{ github.run_id }}-${{ github.run_attempt }}
+          artifact-ids: ${{ needs.sign.outputs.artifact }}
+          merge-multiple: true
           path: delivery
       - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
         with:
