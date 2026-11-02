@@ -12,7 +12,7 @@ běžnou aktualizaci. Obnovitelnou rotaci bez původního klíče zde nemáme.
 
 ## Před jakoukoli odinstalací
 
-1. Zastav nové záznamy, ponech synchronizaci vypnutou a ulož počet relací,
+1. Zastav nové záznamy, v nastavení Drivu zvol „Pozastavit automatické odesílání“ a ulož počet relací,
    jejich UUID/revize, otevřenou relaci, XMP stavy a stav přenosové fronty.
    Pokud je XMP `writing`, `permission_required` nebo rozpracované obnovení JPEG,
    **neodinstalovávej**: nejdřív dokonči nebo obnov původní JPEG a nezávisle jej
@@ -24,8 +24,10 @@ běžnou aktualizaci. Obnovitelnou rotaci bez původního klíče zde nemáme.
    ze zdrojového commitu alpha3:
 
    ```sh
+   git fetch origin f04dba7c2147bf1041482e6c2e872325c5a4633e
+   git show f04dba7c2147bf1041482e6c2e872325c5a4633e:schemas/field-session-2.0.schema.json > /bezpecna/cesta/field-session-schema.json
    python3 scripts/release/check_backup.py /bezpecna/cesta/alpha2.json \
-     --schema schemas/field-session-2.0.schema.json
+     --schema /bezpecna/cesta/field-session-schema.json
    ```
 
    Výstup obsahuje počty a otisk, nikoli souřadnice. Srovnej počty s telefonem,
@@ -70,7 +72,7 @@ odmítnuté. Nemaž SEF ani neupravuj EXIF kvůli obejití ochrany.
 
    ```sh
    python3 scripts/release/check_backup.py /bezpecna/cesta/alpha2.json \
-     --schema schemas/field-session-2.0.schema.json \
+     --schema /bezpecna/cesta/field-session-schema.json \
      --compare /bezpecna/cesta/alpha3-po-importu.json
    ```
 

@@ -159,7 +159,7 @@ def main():
         (args.directory/'release-manifest.json').write_text(json.dumps(manifest, indent=2)+'\n')
         j = data['junit']
         (args.directory/'TEST_REPORT.md').write_text(
-            f"# Alpha3 release verification\n\nSource: `{plan['source_commit']}`.\n"
+            f"# FortGPS Field {plan['version_name']} release verification\n\nSource: `{plan['source_commit']}`.\n"
             f"Pipeline: `{os.environ['GITHUB_SHA']}`; Actions run `{os.environ['GITHUB_RUN_ID']}`.\n\n"
             f"JUnit/Robolectric: {j['tests']} total, {j['tests']-j['skipped']} passed, {j['skipped']} skipped.\n"
             f"Python source: {data['python_tests']} passed; pipeline: {data['pipeline_python_tests']} passed.\n"
