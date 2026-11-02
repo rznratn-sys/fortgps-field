@@ -66,3 +66,20 @@ python3 scripts/release/integration_signing.py \
 
 Tento příkaz vytváří pouze krátkodobý testovací klíč a po sobě uklidí. Nic
 neuploaduje a nemá publikační krok. Produkční návod: OWNER_RUNBOOK.md.
+
+## Nová fáze: JDK 21 a připravenost obnovy
+
+Vlastník hlásí skutečný vec-pi5 s Debian 13.7/aarch64, Python 3.13.5 a OpenJDK
+21.0.13: prošlo --help, RSA 4096 test keystore (odstraněn) a spuštění ověřeného
+apksigner.jar version=0.9. Celý signing/recovery test na tomto Pi zatím chybí.
+
+Lokální cloud nyní používá Debian OpenJDK 21.0.12.1 a Python 3.12.14. Prošlo
+45 Python testů včetně skutečné RSA 4096 PKCS12/CSR obnovy obou testovacích kopií,
+OpenPGP AES-256 roundtripu, odmítnutí chybného hesla/poškození/přepisu a lab zkoušky,
+která nikdy nesmí dát production_ready=true. GPG 2.4.7 používá vlastní temp homedir,
+explicitní S2K a --no-autostart: žádný agent ani konfigurace projektu Věc.
+
+CI matice je rozšířena na JDK 17/21 × x86_64/aarch64 s Pythonem 3.13.5.
+Výsledky tohoto plného signing běhu budou doplněny po skutečném dokončení.
+Produkční klíč, USB/nezávislé úložiště vlastníka a fyzické Pi tím ověřeny nejsou.
+Aktuální konkrétní postup a STOP podmínky: PI_JDK21_AND_BACKUPS.md.

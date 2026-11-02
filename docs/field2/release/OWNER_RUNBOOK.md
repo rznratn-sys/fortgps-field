@@ -1,5 +1,8 @@
 # Lokální podpis na Raspberry Pi OS ARM64
 
+Aktuální konkrétní postup pro vec-pi5, JDK 21 a USB: **PI_JDK21_AND_BACKUPS.md**.
+Produkční vytvoření nyní vyžaduje předem ověřenou identity-readiness.json.
+
 Tento postup **nahrazuje předchozí návrh s klíčem v Actions Secrets**.
 Soukromý produkční klíč smí být pouze na vlastním Pi a v nezávislých šifrovaných
 zálohách. Příkaz pro upload keystore byl odstraněn. GitHub dostane pouze
@@ -28,9 +31,12 @@ patří do nové oddělené složky; existující složku nepřepisuj.
 ## 1. Až budeš doma: nezapisující kontrola
 
 Na Pi nejprve pouze `uname -m`, `cat /etc/os-release`, `python3 --version`,
-`java -version` a `df -h`. Požadavek: Linux aarch64/arm64, Python 3.11+, JDK 17.
-Neměň sdílený Java runtime projektu Věc. Pokud není vhodný JDK, stáhni samostatný
-**Linux ARM64 JDK 17** (např. Temurin), porovnej archiv s publikovaným SHA-256
+`java -version` a `df -h`. Požadavek: Linux aarch64/arm64, Python 3.11+, lokální JDK 17 nebo 21.
+Na vec-pi5 ponech stávající OpenJDK 21.0.13; další JDK 17 se nevyžaduje.
+Konkrétní plný signing/recovery test na tomto Pi musí před produkčním create
+projít podle PI_JDK21_AND_BACKUPS.md. Samotné `version` není celý test.
+Neměň sdílený Java runtime projektu Věc. Pokud už vhodný JDK funguje, další neinstaluj. Jinak lze později po souhlasu stáhnout samostatný
+**Linux ARM64 JDK 17 nebo 21** (např. Temurin), porovnej archiv s publikovaným SHA-256
 výrobce a rozbal jej do vlastní nové složky. Totéž pro ARM64 gh CLI, pokud není
 k dispozici. Žádné `sudo`, apt install, update-alternatives ani změny `.bashrc`.
 
@@ -45,7 +51,9 @@ git clone https://github.com/rznratn-sys/fortgps-field.git "$HOME/fortgps-releas
 
 Po schválení/merge PR checkoutuj přesný odsouhlasený main commit. Níže `<pipeline>`
 znamená jeho celý 40hex SHA, ne pohyblivou větev. Vše prováděj z tohoto checkoutu.
-V každém příkazu lze použít `FORTGPS_JAVA_HOME=/cesta/k/soukromemu/jdk-17`;
+Na stávajícím vec-pi5 používej funkční Javu 21 z PATH bez další instalace.
+Pokud funguje PATH, celý prefix FORTGPS_JAVA_HOME vynech.
+V ostatních případech lze použít `FORTGPS_JAVA_HOME=/cesta/k/soukromemu/jdk`;
 platí pouze pro tento proces a nepřepíná systémovou Javu.
 
 ## 2. Přenosný podpisový nástroj
@@ -61,7 +69,7 @@ počítači/Pi (nebo jej přenes). Extrahuj jen ověřený JAR, nikoli celý SDK
 python3 scripts/release/portable_tools.py \
   --sdk-archive /cesta/build-tools-linux-35.zip \
   --output "$HOME/fortgps-release/tools/build-tools-35"
-FORTGPS_JAVA_HOME=/cesta/jdk-17 /cesta/jdk-17/bin/java -jar \
+FORTGPS_JAVA_HOME=/cesta/k-vlastnimu-jdk /cesta/k-vlastnimu-jdk/bin/java -jar \
   "$HOME/fortgps-release/tools/build-tools-35/apksigner.jar" version
 ```
 
@@ -76,7 +84,8 @@ nelze nahradit pouhou kontrolou APK.
 Nyní se tento krok neprovádí. Na vlastním ARM64 Pi, v interaktivním terminálu:
 
 ```sh
-FORTGPS_JAVA_HOME=/cesta/jdk-17 python3 scripts/release/owner_key.py create \
+FORTGPS_JAVA_HOME=/cesta/k-vlastnimu-jdk python3 scripts/release/owner_key.py create \
+  --readiness "$HOME/fortgps-release/private/identity-readiness.json" \
   --keystore "$HOME/fortgps-release/private/fortgps-release.p12"
 ```
 
@@ -93,9 +102,10 @@ podle svého provozního návrhu — tento projekt nastavení Pi automaticky nem
 Obnov z média kopii zpět do jiné privátní složky **na Pi** a ověř heslo z recovery:
 
 ```sh
-FORTGPS_JAVA_HOME=/cesta/jdk-17 python3 scripts/release/owner_key.py verify-backup \
+FORTGPS_JAVA_HOME=/cesta/k-vlastnimu-jdk python3 scripts/release/owner_key.py verify-backup \
   --keystore "$HOME/fortgps-release/private/fortgps-release.p12" \
-  --restored /privatni-obnovena-slozka/fortgps-release.p12 \
+  --restored /privatni-obnovena-slozka/usb.p12 \
+  --second-restored /privatni-obnovena-slozka/second.p12 \
   --receipt "$HOME/fortgps-release/private/fortgps-recovery.json"
 ```
 
@@ -136,7 +146,7 @@ Samotný signer síť nepoužívá. Zachovej provoz Věc. Podepisování běží
 jednorázový proces s privátními soubory; výstupní složka musí být nová:
 
 ```sh
-FORTGPS_JAVA_HOME=/cesta/jdk-17 python3 scripts/release/local_sign.py \
+FORTGPS_JAVA_HOME=/cesta/k-vlastnimu-jdk python3 scripts/release/local_sign.py \
   --input "$HOME/fortgps-release/work/alpha3-input" \
   --output "$HOME/fortgps-release/work/alpha3-delivery" \
   --keystore "$HOME/fortgps-release/private/fortgps-release.p12" \
@@ -170,7 +180,7 @@ nikoli zveřejněním hodnot. Přístup k těmto nastavením z připojené integ
 Nejprve pouze validuj veřejný bundle lokálně (bez --create-draft = bez uploadu):
 
 ```sh
-FORTGPS_JAVA_HOME=/cesta/jdk-17 python3 scripts/release/stage_bundle.py \
+FORTGPS_JAVA_HOME=/cesta/k-vlastnimu-jdk python3 scripts/release/stage_bundle.py \
   --directory "$HOME/fortgps-release/work/alpha3-delivery" \
   --input "$HOME/fortgps-release/work/alpha3-input" \
   --jar "$HOME/fortgps-release/tools/build-tools-35/apksigner.jar" \
@@ -207,4 +217,5 @@ Primární reference: https://developer.android.com/tools/apksigner (zipalign p�
 podpisem, hesla přes env/stdin, v1-signer-name a verify),
 https://developer.android.com/tools/zipalign,
 https://github.com/actions/partner-runner-images (ubuntu-24.04-arm).
+Lokální signing CI pokrývá JDK 17/21 a Python 3.13.5; aplikační build zůstává JDK 17.
 ARM64 CI je skutečný ARM64 Linux/JVM, nikoli fyzické Raspberry Pi OS/Věc.
