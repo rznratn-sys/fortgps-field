@@ -46,3 +46,11 @@ Otisk pochází z SDK instalace GitHub runneru; nemění se podle vstupního APK
 Publikace musí být výslovně povolená i uvnitř validačního skriptu, nikoli pouze
 YAML podmínkou. Draft/public tag se kontroluje proti přesnému source commitu.
 Závěrečný dotaz na Releases stále vrátil pouze v2.0.0-alpha2, žádnou alpha3 ani draft.
+
+Nová návazná fáze připravuje JDK 21 a dvě vnější šifrované zálohy. Kód nepoužívá
+JDK-17-only signing API; build aplikace na GitHubu zůstává JDK 17. Skutečný Pi
+s Javou 21 je popsán vlastníkem, nikoli ověřen vzdáleným přihlášením. Nový
+pi_preflight ověří celý skutečný APK workflow lokálně s dočasným RSA 4096.
+Produkční create nyní vyžaduje předchozí preflight a dvě obnovené testovací zálohy;
+lab/cloud záznam nesmí produkci odemknout. Produkční signer navíc vyžaduje dvě
+skutečně obnovené kopie v konečném backup receipt. Nic produkčního se nevytváří.

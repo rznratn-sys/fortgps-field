@@ -33,7 +33,7 @@ def main():
     with tempfile.TemporaryDirectory(prefix='fortgps-disposable-test-') as d:
         root=Path(d);key=root/'TEST-ONLY.p12';password=secrets.token_urlsafe(32)
         run([keytool(),'-genkeypair','-keystore',str(key),'-storetype','PKCS12','-alias','field-test',
-             '-keyalg','RSA','-keysize','2048','-validity','2','-dname','CN=FortGPS TEST ONLY - NOT FOR DISTRIBUTION',
+             '-keyalg','RSA','-keysize','4096','-validity','2','-dname','CN=FortGPS TEST ONLY - NOT FOR DISTRIBUTION',
              '-storepass:env','FIELD_OWNER_PASSWORD','-keypass:env','FIELD_OWNER_PASSWORD'],password=password)
         expected=cert(key,'field-test',password)
         receipt=root/'test-receipt.json'
@@ -60,9 +60,10 @@ def main():
         rejected(lambda:verify_signature(root/'first'/approved['apk_name'],a.jar,expected))
         checks+=['test_certificate_subject_refused_for_production']
     # Only public test summary survives; TemporaryDirectory removed keys, passwords are not logged.
-    report={'architecture':platform.machine(),'system':platform.system(),'checks_passed':checks,
+    from pi_preflight import runtime_info,device_info
+    report={'java':runtime_info(),'rsa_bits':4096,'architecture':platform.machine(),'system':platform.system(),'checks_passed':checks,
             'private_test_files_removed':not root.exists(),'production_identity_created':False,
-            'physical_raspberry_pi_tested':False,'published':False}
+            'physical_raspberry_pi_tested':device_info()['physical_pi_observed'],'published':False}
     a.report.write_text(json.dumps(report,indent=2)+'\n')
     print(json.dumps(report,indent=2))
 

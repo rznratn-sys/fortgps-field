@@ -245,4 +245,59 @@ class PortableHandoffTests(unittest.TestCase):
             (p/'SHA256SUMS').write_text(''.join(f'{v.sha256(p/n)}  {n}\n' for n in v.file_names(PLAN)))
             with self.assertRaisesRegex(ValueError,'test signatures'):v.bundle(p,PLAN,CERT,None)
 
-if __name__ == '__main__':unittest.main()
+
+class RecoveryPreparationTests(unittest.TestCase):
+    def test_java_21_is_selected_without_jdk_17_dependency(self):
+        info=module('pi_preflight').runtime_info()
+        self.assertIn(info['major'],[17,21])
+        self.assertIn('java.vendor',info)
+    def test_missing_readiness_cannot_authorize_creation(self):
+        rr=module('recovery_readiness')
+        with tempfile.TemporaryDirectory() as d:
+            p=Path(d)/'readiness.json';p.write_text(json.dumps({'production_ready':False}))
+            with self.assertRaises(ValueError):rr.validate_readiness(p)
+            with self.assertRaises(ValueError):rr.usb_check(Path(d),Path(d))
+    def test_gpg_roundtrip_wrong_password_tamper_and_no_overwrite(self):
+        encrypt=module('encrypted_backup')
+        import secrets
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d);plain=root/'fixture';plain.write_bytes(b'public disposable backup fixture')
+            password=secrets.token_urlsafe(32)
+            encrypt.transform(plain,root/'backup.gpg',password)
+            encrypt.transform(root/'backup.gpg',root/'restore',password,decrypt=True)
+            self.assertEqual((root/'restore').read_bytes(),plain.read_bytes())
+            with self.assertRaises(FileExistsError):encrypt.transform(plain,root/'backup.gpg',password)
+            with self.assertRaises(RuntimeError):encrypt.transform(root/'backup.gpg',root/'wrong',secrets.token_urlsafe(32),decrypt=True)
+            self.assertFalse((root/'wrong').exists())
+            data=bytearray((root/'backup.gpg').read_bytes());data[-8]^=1;(root/'tampered.gpg').write_bytes(data)
+            with self.assertRaises(RuntimeError):encrypt.transform(root/'tampered.gpg',root/'bad',password,decrypt=True)
+            self.assertFalse((root/'bad').exists())
+    def test_complete_disposable_two_store_rehearsal_never_unlocks_cloud_production(self):
+        rr=module('recovery_readiness')
+        import secrets,shutil
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d);(root/'usb').mkdir();(root/'second').mkdir()
+            preflight=root/'preflight';preflight.write_text('{}')
+            password=secrets.token_urlsafe(32);outer=secrets.token_urlsafe(32)
+            archive=rr.prepare(preflight,root/'usb',root/'state.json',password,outer,test_only=True)
+            second=root/'second'/'retrieved.gpg';shutil.copyfile(archive,second)
+            result=rr.finish(root/'state.json',second,root/'ready.json',password,outer,independent_attested=True,test_only=True)
+            self.assertEqual(result['verified_restore_copies'],2)
+            self.assertTrue(result['test_private_files_removed'])
+            self.assertFalse(result['production_ready'])
+            with self.assertRaises(ValueError):rr.validate_readiness(root/'ready.json')
+            self.assertFalse(list(root.rglob('*.p12')))
+    def test_two_actual_restored_keys_required_for_final_receipt(self):
+        import secrets,shutil
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d);key=root/'TEST-ONLY.p12';password=secrets.token_urlsafe(32)
+            k.run([k.keytool(),'-genkeypair','-keystore',str(key),'-storetype','PKCS12','-alias','field-test',
+                   '-keyalg','RSA','-keysize','4096','-validity','2','-dname','CN=FortGPS TEST ONLY - BACKUP',
+                   '-storepass:env','FIELD_OWNER_PASSWORD','-keypass:env','FIELD_OWNER_PASSWORD'],password=password)
+            first=root/'usb-restored.p12';second=root/'second-restored.p12';shutil.copyfile(key,first);shutil.copyfile(key,second)
+            with self.assertRaises(ValueError):k.backup_record(key,first,'field-test',password,root/'missing.json')
+            with patch('builtins.input',return_value='BACKUP VERIFIED'):
+                k.backup_record(key,first,'field-test',password,root/'receipt.json',second)
+            self.assertEqual(json.loads((root/'receipt.json').read_text())['verified_backup_copies'],2)
+
+if __name__ == "__main__":unittest.main()

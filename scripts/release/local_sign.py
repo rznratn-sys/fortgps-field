@@ -30,7 +30,7 @@ def receipt_check(receipt, key, password, test_only):
     if test_only:
         if data.get('test_only') is not True:
             raise ValueError('Test mode requires explicitly disposable test-key receipt')
-    elif data.get('test_only') or data.get('owner_attested_independent_backup') is not True:
+    elif data.get('test_only') or data.get('owner_attested_independent_backup') is not True or data.get('verified_backup_copies')!=2:
         raise ValueError('Production signing requires owner-verified independent backup')
     if data['keystore_sha256']!=sha(key) or cert(key,data['alias'],password)!=digest(data['certificate_sha256']):
         raise ValueError('Keystore/receipt/certificate mismatch')

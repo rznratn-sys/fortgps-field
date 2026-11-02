@@ -121,6 +121,7 @@ jobs:
       fail-fast: false
       matrix:
         runner: [ubuntu-24.04, ubuntu-24.04-arm]
+        java: ['17', '21']
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 15
     steps:
@@ -130,7 +131,7 @@ jobs:
       - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: ${{ matrix.java }}
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           artifact-ids: ${{ needs.build.outputs.artifact }}
@@ -141,11 +142,18 @@ jobs:
           artifact-ids: ${{ needs.build.outputs.tool }}
           merge-multiple: true
           path: portable-tool
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.13.5'
+      - name: Exercise release and encrypted-recovery tools on Python 3.13
+        run: |
+          python3 -m pip install jsonschema==4.25.1
+          python3 -m unittest discover -s tests -p test_release_pipeline.py -v
       - name: Test real signing with disposable keys; never publish test APKs
         run: python3 scripts/release/integration_signing.py --input unsigned --jar portable-tool/apksigner.jar --report crypto-report.json
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: field-crypto-report-${{ matrix.runner }}-${{ github.run_id }}-${{ github.run_attempt }}
+          name: field-crypto-report-${{ matrix.runner }}-jdk${{ matrix.java }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: crypto-report.json
           if-no-files-found: error
           retention-days: 7

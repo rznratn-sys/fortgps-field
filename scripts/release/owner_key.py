@@ -49,20 +49,26 @@ def cert(path, alias, password):
     return hashlib.sha256(der).hexdigest()
 
 
-def backup_record(key, restored, alias, password, record):
+def backup_record(key, restored, alias, password, record, second_restored=None):
     if not key.is_file() or not restored.is_file() or os.path.samefile(key, restored):
         raise ValueError('Provide a separately restored backup file')
     before = hashlib.sha256(key.read_bytes()).hexdigest()
     if hashlib.sha256(restored.read_bytes()).hexdigest() != before:
         raise ValueError('Restored keystore differs')
+    if second_restored is None or not second_restored.is_file() or os.path.samefile(key,second_restored) or os.path.samefile(restored,second_restored):
+        raise ValueError('Two separately restored private-key copies are required')
+    if hashlib.sha256(second_restored.read_bytes()).hexdigest()!=before:
+        raise ValueError('Second restored keystore differs')
     fingerprint = cert(restored, alias, password)
+    if cert(second_restored,alias,password)!=fingerprint:
+        raise ValueError('Second restored private key differs')
     if cert(key, alias, password) != fingerprint:
         raise ValueError('Certificate differs')
     if input('Independent encrypted backup exists on separate media; password is recoverable separately. Type BACKUP VERIFIED: ') != 'BACKUP VERIFIED':
         raise ValueError('No owner recovery attestation')
     data = {'certificate_sha256': fingerprint, 'keystore_sha256': before, 'alias': alias,
             'verified_at': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),
-            'owner_attested_independent_backup': True}
+            'owner_attested_independent_backup': True, 'verified_backup_copies': 2}
     with record.open('x') as f:
         json.dump(data, f, indent=2)
         f.write('\n')
@@ -76,6 +82,8 @@ def main():
     p.add_argument('--alias', default='field-release')
     p.add_argument('--restored', type=Path)
     p.add_argument('--receipt', type=Path)
+    p.add_argument('--second-restored', type=Path)
+    p.add_argument('--readiness', type=Path, help='Successful physical Pi signing + two-store rehearsal; required for create')
     a = p.parse_args()
     if not sys.stdin.isatty() or os.environ.get('GITHUB_ACTIONS') or os.environ.get('CODEX_CLOUD'):
         raise ValueError('Use an interactive terminal on the owner-controlled device')
@@ -85,6 +93,10 @@ def main():
         import platform
         if platform.system() != 'Linux' or platform.machine() not in ['aarch64', 'arm64']:
             raise ValueError('Production identity creation requires owner-controlled Linux ARM64')
+        if not a.readiness:
+            raise ValueError('--readiness required: rehearse BOTH encrypted backups before production creation')
+        from recovery_readiness import validate_readiness
+        validate_readiness(a.readiness)
         if key.exists():
             raise ValueError('Refusing to replace an existing keystore')
         if input('On your own device, authorize a new long-term signing identity. Type CREATE: ') != 'CREATE':
@@ -103,7 +115,7 @@ def main():
         password = getpass.getpass('Keystore password: ')
         if not a.restored or not a.receipt:
             raise ValueError('--restored and --receipt required')
-        backup_record(key, external(a.restored), a.alias, password, external(a.receipt))
+        backup_record(key, external(a.restored), a.alias, password, external(a.receipt), external(a.second_restored) if a.second_restored else None)
 
 
 if __name__ == '__main__':
