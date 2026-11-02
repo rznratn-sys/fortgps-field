@@ -15,6 +15,10 @@ with urllib.request.urlopen(base+'/releases/tags/'+plan['tag'], timeout=60) as r
     release = json.load(response)
 if release['draft'] or not release['prerelease'] or release['tag_name'] != plan['tag']:
     raise ValueError('Expected public prerelease')
+with urllib.request.urlopen(base+'/git/ref/tags/'+plan['tag'], timeout=60) as response:
+    ref = json.load(response)['object']
+if ref.get('type') != 'commit' or ref.get('sha') != plan['source_commit']:
+    raise ValueError('Public tag points to the wrong source')
 names = {plan['apk_name'], 'release-manifest.json', 'SHA256SUMS', 'INSTALL.md', 'RELEASE_NOTES.md', 'TEST_REPORT.md'}
 if len(release['assets']) != len(names) or {x['name'] for x in release['assets']} != names:
     raise ValueError('Unexpected public assets')

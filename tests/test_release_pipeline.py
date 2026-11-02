@@ -218,12 +218,20 @@ class PortableHandoffTests(unittest.TestCase):
             with self.assertRaises(ValueError):v.python_count(p)
         with self.assertRaises(ValueError):h.timestamp('2999-01-01T00:00:00Z')
     def test_github_transport_fails_closed_on_wrong_run(self):
+        publication=module('validate_publication')
+        with patch.dict(os.environ,{},clear=True),self.assertRaisesRegex(ValueError,'disabled'):
+            publication.main()
         value={'repository':{'full_name':PLAN['repository']},'head_sha':'c'*40,'head_branch':'main',
                'event':'workflow_dispatch','conclusion':'success','path':'.github/workflows/publish-alpha3.yml'}
         with patch.object(gh,'api',return_value=value):gh.build_run('123','c'*40)
         for field,bad in [('head_branch','feature'),('event','pull_request'),('conclusion','failure'),('head_sha','d'*40)]:
             changed=dict(value);changed[field]=bad
             with patch.object(gh,'api',return_value=changed),self.assertRaises(ValueError):gh.build_run('123','c'*40)
+        release={'id':1,'tag_name':PLAN['tag'],'target_commitish':PLAN['source_commit'],'draft':True,'prerelease':True,
+                 'assets':[{'name':n} for n in v.file_names(PLAN)+['SHA256SUMS']]}
+        with patch.object(gh,'api',return_value=release):self.assertEqual(gh.draft('1')['id'],1)
+        release['target_commitish']='wrong-source'
+        with patch.object(gh,'api',return_value=release),self.assertRaises(ValueError):gh.draft('1')
     def test_test_signed_bundle_publication_refused(self):
         text='Signer #1 certificate DN: CN=FortGPS TEST ONLY - NOT FOR DISTRIBUTION'
         with self.assertRaises(ValueError):v.reject_test_certificate(text)

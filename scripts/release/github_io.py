@@ -46,7 +46,7 @@ def draft(release_id):
     if not str(release_id).isdigit():raise ValueError('Invalid draft release ID')
     p=plan();r=api(f"repos/{p['repository']}/releases/{release_id}")
     expected={p['apk_name'],'release-manifest.json','SHA256SUMS','INSTALL.md','RELEASE_NOTES.md','TEST_REPORT.md'}
-    if (r['tag_name']!=p['tag'] or r['draft'] is not True or r['prerelease'] is not True or
+    if (r['tag_name']!=p['tag'] or r.get('target_commitish')!=p['source_commit'] or r['draft'] is not True or r['prerelease'] is not True or
         len(r['assets'])!=6 or {a['name'] for a in r['assets']}!=expected):
         raise ValueError('Expected complete private draft prerelease')
     return r
