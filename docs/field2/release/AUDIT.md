@@ -106,3 +106,18 @@ klíče na zařízení vlastníka, nezávislé zálohy a skutečná obnova; tepr
 výslovně schválený upload Secrets a ruční workflow. Do té doby žádné APK vydání.
 Datová migrace má oddělené STOP podmínky v INSTALL.md, včetně drive.file rizika
 neviditelných historických souborů a duplicitního uploadu.
+
+## Nové CI při převzetí (potvrzeno, doplňuje starší log)
+
+[Kontrolní běh 41453567055](https://github.com/rznratn-sys/fortgps-field/actions/runs/41453567055)
+na pipeline commitu 30596a42458296ece6b5ace3064aacb343160044 úspěšně sestavil
+přesný f04dba7: debug APK, instrumentační APK, unsigned release APK, JUnit,
+debug lint a release lint. Z XML nově spočítáno **56 testů: 53 passed, 3 skipped,
+0 failures/errors**. Python zdroj 14/14, release nástroje 19/19. Oba linty mají
+0 chyb a **29 varování**, což je rozdíl proti historickým 14. Rozpis ID varování
+je doplněn do evidence následující revize pipeline. Podpis/publikace/public
+readback byly správně skipped. Unsigned artifact není instalační release APK.
+
+Pipeline dále předává artefakty přes výstupní ID jobu, aby opakování pouze
+neúspěšného signing/publication jobu používalo přesný artifact úspěšného
+předchůdce i po zvýšení run_attempt. Žádné hledání podle globu napříč běhy.
