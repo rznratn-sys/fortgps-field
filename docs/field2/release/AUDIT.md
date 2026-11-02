@@ -26,8 +26,11 @@ budoucím vydáním nastavit vlastník. Žádné produkční tajné hodnoty zde 
 
 Historické f04dba7 CI i nové předchozí CI prošly (53 JUnit passed/3 skipped,
 14 Python, oba linty 0 errors/29 warnings). Dosavadních 55/1 v dokumentaci bylo
-s dvěma dalšími soukromými fixtures. Nová release sada má lokálně 26 testů;
-real crypto x86-64/ARM64 a aktuální build se ověřují v CI. Výsledky: TEST_REPORT.md.
+s dvěma dalšími soukromými fixtures. Nová release sada má 26 testů a všech 40 Python testů prošlo lokálně i v CI.
+Real crypto testy na x86_64 i aarch64 prošly (po 10 kontrolách) s dočasnou
+testovací identitou, včetně skutečného tamper/password/certificate odmítnutí,
+opakovaného podpisu, testovací obnovy a úklidu. Finální main běh 41464270883
+zopakoval build a obě architektury. Výsledky/odkazy: TEST_REPORT.md.
 
 Klíč musí zůstat na Pi a v nezávislých šifrovaných zálohách. Dokud vlastník
 neprovede obnovu/CSR test, není produkční obnovitelnost prokázaná. JSON ze staré
@@ -36,3 +39,10 @@ v INSTALL.md. Nynější práce ji neprovádí ani neslibuje bezpečnost reáln�
 
 Přesné oddělené umístění JDK/nástrojů/klíče, žádné sudo/apt/systemd/profily,
 budoucí souhlasy, postup draft/public readback a alpha4: OWNER_RUNBOOK.md.
+
+Připnutý Java nástroj Build Tools 35.0.0: SHA-256
+00ef9948f843fe395d2440ae3ef41405b8040a6d5d46493bd1902ac0ee6deae7.
+Otisk pochází z SDK instalace GitHub runneru; nemění se podle vstupního APK.
+Publikace musí být výslovně povolená i uvnitř validačního skriptu, nikoli pouze
+YAML podmínkou. Draft/public tag se kontroluje proti přesnému source commitu.
+Závěrečný dotaz na Releases stále vrátil pouze v2.0.0-alpha2, žádnou alpha3 ani draft.
