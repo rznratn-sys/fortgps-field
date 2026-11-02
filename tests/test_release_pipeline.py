@@ -1,4 +1,6 @@
 import copy
+import sys
+import zipfile
 import importlib.util
 import json
 import os
@@ -9,6 +11,7 @@ import unittest
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0,str(ROOT/'scripts/release'))
 def module(name):
     spec = importlib.util.spec_from_file_location(name, ROOT/f'scripts/release/{name}.py')
     obj = importlib.util.module_from_spec(spec)
@@ -17,6 +20,9 @@ def module(name):
 v = module('verify')
 b = module('check_backup')
 k = module('owner_key')
+h = module('handoff')
+ls = module('local_sign')
+gh = module('github_io')
 PLAN = json.loads((ROOT/'scripts/release/plan.json').read_text())
 CERT = 'a'*64
 SIGN = f'Number of signers: 1\nSigner #1 certificate SHA-256 digest: {CERT}\nVerified using v2 scheme (APK Signature Scheme v2): true\n'
@@ -48,7 +54,7 @@ class ReleaseTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             p = Path(d)
             for name in v.file_names(PLAN): (p/name).write_text('fixture')
-            manifest = dict(PLAN, signer_certificate_sha256=CERT, pipeline_commit='c'*40,
+            manifest = dict(PLAN, schema=2, signing_mode='owner-local', test_only=False, key_backup_verified_at='2026-11-02T00:00:00Z', signer_certificate_sha256=CERT, pipeline_commit='c'*40,
                             apk_sha256=v.sha256(p/PLAN['apk_name']), apk_size=7)
             (p/'release-manifest.json').write_text(json.dumps(manifest))
             def sums(): (p/'SHA256SUMS').write_text(''.join(f'{v.sha256(p/n)}  {n}\n' for n in v.file_names(PLAN)))
@@ -66,31 +72,6 @@ class ReleaseTests(unittest.TestCase):
                 manifest['source_commit']='e'*40
                 (p/'release-manifest.json').write_text(json.dumps(manifest)); sums()
                 with self.assertRaises(ValueError): v.bundle(p, PLAN, CERT, Path('/tools'))
-    def test_alpha4_assemble_manifest_report_and_complete_asset_inventory(self):
-        # Cryptographic verification is explicitly mocked: this test creates no key or real APK.
-        with tempfile.TemporaryDirectory() as d:
-            directory=Path(d)/'delivery'; directory.mkdir()
-            plan=dict(PLAN, version_name='2.0.0-alpha4', version_code=20003,
-                      tag='v2.0.0-alpha4', apk_name='FortGPS_Field_2.0.0-alpha4.apk')
-            plan_path=Path(d)/'plan.json'; plan_path.write_text(json.dumps(plan))
-            (directory/plan['apk_name']).write_bytes(b'public test fixture, not a real APK')
-            for name in ['INSTALL.md','RELEASE_NOTES.md']: (directory/name).write_text('fixture')
-            data={'source_commit':plan['source_commit'],'junit':{'tests':56,'failures':0,'errors':0,'skipped':3},
-                  'skipped_tests':['optional fixture'],'lint':{'debug':{'errors':0},'release':{'errors':0}},
-                  'python_tests':14,'pipeline_python_tests':20}
-            (directory/'build-evidence.json').write_text(json.dumps(data))
-            env={'FIELD_RELEASE_CERT_SHA256':CERT,'GITHUB_SHA':'c'*40,'GITHUB_RUN_ID':'123',
-                 'FIELD_KEY_BACKUP_VERIFIED_AT':'2026-11-02T00:00:00Z'}
-            args=['verify.py','assemble','--plan',str(plan_path),'--directory',str(directory),'--tools','/tools']
-            with patch.dict(os.environ,env), patch('sys.argv',args), patch.object(v,'verify_apk',return_value='b'*40):
-                v.main()
-            self.assertEqual({p.name for p in directory.iterdir()},set(v.file_names(plan)+['SHA256SUMS']))
-            manifest=json.loads((directory/'release-manifest.json').read_text())
-            self.assertEqual(manifest['version_code'],20003)
-            self.assertEqual(manifest['signer_certificate_sha256'],CERT)
-            self.assertEqual(manifest['signer_certificate_sha1'],'b'*40)
-            self.assertIn('2.0.0-alpha4',(directory/'TEST_REPORT.md').read_text())
-            self.assertFalse((directory/'build-evidence.json').exists())
     def test_missing_or_failed_test_reports(self):
         with tempfile.TemporaryDirectory() as d:
             p=Path(d)
@@ -112,13 +93,12 @@ class ReleaseTests(unittest.TestCase):
             self.assertEqual(result['lint']['release']['warning_ids'],{'GradleDependency':1})
             (lint/'lint-results-release.xml').write_text('<issues><issue severity="Error" id="Fail"/></issues>')
             with self.assertRaises(ValueError): v.evidence(p,p/'python.txt')
-    def test_signing_missing_secrets_exits_without_files(self):
-        env={key: value for key,value in os.environ.items() if not key.startswith('FIELD_')}
-        with tempfile.TemporaryDirectory() as d:
-            env['RUNNER_TEMP']=d
-            result=subprocess.run(['bash', str(ROOT/'scripts/release/sign.sh')], env=env, capture_output=True)
-            self.assertNotEqual(result.returncode,0)
-            self.assertEqual(list(Path(d).iterdir()),[])
+    def test_no_cloud_signing_secrets_or_owner_upload_command(self):
+        text=(ROOT/'.github/workflows/publish-alpha3.yml').read_text()
+        self.assertNotIn('secrets.',text)
+        self.assertFalse((ROOT/'scripts/release/sign.sh').exists())
+        self.assertNotIn('gh', (ROOT/'scripts/release/local_sign.py').read_text().split('def main():')[0].replace('SHA-256',''))
+        self.assertFalse(hasattr(k,'upload'))
     def test_keystore_inside_repository_forbidden(self):
         with self.assertRaises(ValueError): k.external(ROOT/'test.p12')
     def test_private_subprocess_errors_suppressed(self):
@@ -151,18 +131,18 @@ class ReleaseTests(unittest.TestCase):
     def test_workflow_trust_boundaries(self):
         text=(ROOT/'.github/workflows/publish-alpha3.yml').read_text()
         self.assertNotIn('pull_request_target',text)
-        self.assertNotIn('secrets.', text.split('  sign:')[0])
+        self.assertNotIn('secrets.',text)
         self.assertIn("github.ref == 'refs/heads/main'",text)
-        self.assertIn('environment: field-release',text)
-        signing=text.split('  sign:')[1].split('  publish:')[0]
-        self.assertNotIn('./gradlew', signing)
-        self.assertNotIn('contents: write', signing)
+        self.assertIn('environment: field-publication',text)
+        self.assertIn("vars.FIELD_PUBLICATION_ENABLED == 'true'",text)
+        self.assertIn('ubuntu-24.04-arm',text)
+        self.assertNotIn('self-hosted',text)
         import re
         actions=re.findall(r'uses: ([^\s]+)',text)
         self.assertTrue(all(re.fullmatch(r'[^@]+@[0-9a-f]{40}',a) for a in actions))
         publish=(ROOT/'scripts/release/publish.sh').read_text()
         self.assertNotIn('--clobber',publish)
-        self.assertLess(publish.index('draft-readback --tools'),publish.index('--draft=false'))
+        self.assertLess(publish.index('validate_publication.py'),publish.index('--method PATCH'))
 
 
 class BackupValidationTests(unittest.TestCase):
@@ -185,21 +165,73 @@ class BackupValidationTests(unittest.TestCase):
         with self.assertRaises(ValueError) as cm: b.validate([bad],{'required':['absent']})
         self.assertNotIn('SENSITIVE_COORDINATES',str(cm.exception))
 
-class OwnerEnvironmentTests(unittest.TestCase):
-    def environment(self):
-        return {'can_admins_bypass':False,'deployment_branch_policy':{'custom_branch_policies':True},
-                'protection_rules':[{'type':'required_reviewers','reviewers':[{'id':1}],'prevent_self_review':True}]}
-    def test_environment_requires_review_and_only_main(self):
-        env=self.environment()
-        branches={'branch_policies':[{'name':'main','type':'branch'}]}
-        with patch.object(k,'run', side_effect=[json.dumps(env).encode(),json.dumps(branches).encode()]): k.check_environment()
-        for change in ['bypass','review','branch','tag']:
-            e=copy.deepcopy(env); br=copy.deepcopy(branches)
-            if change=='bypass': e['can_admins_bypass']=True
-            if change=='review': e['protection_rules']=[]
-            if change=='branch': br['branch_policies'][0]['name']='*'
-            if change=='tag': br['branch_policies'][0]['type']='tag'
-            with self.subTest(change=change), patch.object(k,'run',side_effect=[json.dumps(e).encode(),json.dumps(br).encode()]):
-                with self.assertRaises(ValueError): k.check_environment()
+class PortableHandoffTests(unittest.TestCase):
+    def fixture(self,root):
+        with zipfile.ZipFile(root/'unsigned.apk','w',compression=zipfile.ZIP_DEFLATED) as z:
+            z.writestr('AndroidManifest.xml',b'opaque-unit-fixture')
+            z.writestr('classes.dex',b'opaque-unit-fixture')
+        for name in ['INSTALL.md','RELEASE_NOTES.md']:(root/name).write_text('public fixture')
+        evidence={'source_commit':PLAN['source_commit'],'junit':{'tests':56,'failures':0,'errors':0,'skipped':3},
+                  'python_tests':14,'pipeline_python_tests':1,'lint':{'debug':{'errors':0},'release':{'errors':0}}}
+        return h.create_input(root,PLAN,evidence,'c'*40,'123',1)
+    def test_input_bound_to_commit_run_and_independent_hash(self):
+        with tempfile.TemporaryDirectory() as d:
+            p=Path(d);m=self.fixture(p)
+            h.check_input(p,PLAN,'c'*40,'123',m['unsigned_sha256'])
+            for pipeline,run,checksum in [('d'*40,'123',m['unsigned_sha256']),('c'*40,'124',m['unsigned_sha256']),('c'*40,'123','0'*64)]:
+                with self.assertRaises(ValueError):h.check_input(p,PLAN,pipeline,run,checksum)
+            (p/'INSTALL.md').write_text('modified')
+            with self.assertRaises(ValueError):h.check_input(p,PLAN,'c'*40,'123',m['unsigned_sha256'])
+    def test_extra_private_file_or_symlink_refused(self):
+        with tempfile.TemporaryDirectory() as d:
+            p=Path(d);m=self.fixture(p)
+            (p/'private.p12').write_text('not a real key')
+            with self.assertRaises(ValueError):h.check_input(p,PLAN,'c'*40,'123',m['unsigned_sha256'])
+            (p/'private.p12').unlink();(p/'INSTALL.md').unlink();(p/'INSTALL.md').symlink_to(p/'RELEASE_NOTES.md')
+            with self.assertRaises(ValueError):h.check_input(p,PLAN,'c'*40,'123',m['unsigned_sha256'])
+    def test_duplicate_zip_and_signature_inputs_rejected(self):
+        with tempfile.TemporaryDirectory() as d:
+            p=Path(d);self.fixture(p)
+            with zipfile.ZipFile(p/'unsigned.apk','a') as z:z.writestr('META-INF/FIELD.RSA',b'fixture')
+            with self.assertRaises(ValueError):h.unsigned(p/'unsigned.apk')
+            with zipfile.ZipFile(p/'duplicate.apk','w') as z:
+                z.writestr('../escape',b'fixture')
+            with self.assertRaises(ValueError):h.inventory(p/'duplicate.apk')
+    def test_only_signature_files_may_be_added(self):
+        with tempfile.TemporaryDirectory() as d:
+            p=Path(d);m=self.fixture(p);signed=p/'signed.apk'
+            import shutil
+            shutil.copyfile(p/'unsigned.apk',signed)
+            with zipfile.ZipFile(signed,'a',compression=zipfile.ZIP_DEFLATED) as z:
+                for n in h.SIGNATURE_FILES:z.writestr(n,b'fixture')
+            h.payload_equal(signed,m['entries'])
+            with zipfile.ZipFile(signed,'a',compression=zipfile.ZIP_DEFLATED) as z:z.writestr('assets/unapproved',b'bad')
+            with self.assertRaises(ValueError):h.payload_equal(signed,m['entries'])
+    def test_alpha4_uses_same_handoff_and_identity_contract(self):
+        with tempfile.TemporaryDirectory() as d:
+            p=Path(d);p4=dict(PLAN,version_name='2.0.0-alpha4',version_code=20003,tag='v2.0.0-alpha4',apk_name='FortGPS_Field_2.0.0-alpha4.apk')
+            (p/'plan.json').write_text(json.dumps(p4));self.assertEqual(h.plan(p/'plan.json'),p4)
+            v.certificate(SIGN,CERT)
+    def test_no_tests_or_future_backup_attestation_rejected(self):
+        with tempfile.TemporaryDirectory() as d:
+            p=Path(d)/'report';p.write_text('Ran 0 tests in 0s\nOK\n')
+            with self.assertRaises(ValueError):v.python_count(p)
+        with self.assertRaises(ValueError):h.timestamp('2999-01-01T00:00:00Z')
+    def test_github_transport_fails_closed_on_wrong_run(self):
+        value={'repository':{'full_name':PLAN['repository']},'head_sha':'c'*40,'head_branch':'main',
+               'event':'workflow_dispatch','conclusion':'success','path':'.github/workflows/publish-alpha3.yml'}
+        with patch.object(gh,'api',return_value=value):gh.build_run('123','c'*40)
+        for field,bad in [('head_branch','feature'),('event','pull_request'),('conclusion','failure'),('head_sha','d'*40)]:
+            changed=dict(value);changed[field]=bad
+            with patch.object(gh,'api',return_value=changed),self.assertRaises(ValueError):gh.build_run('123','c'*40)
+    def test_test_signed_bundle_publication_refused(self):
+        with tempfile.TemporaryDirectory() as d:
+            p=Path(d)
+            for n in v.file_names(PLAN):(p/n).write_text('fixture')
+            manifest=dict(PLAN,schema=2,signing_mode='owner-local',test_only=True,signer_certificate_sha256=CERT,
+                          apk_sha256=v.sha256(p/PLAN['apk_name']),apk_size=7,key_backup_verified_at='2026-11-02T00:00:00Z')
+            (p/'release-manifest.json').write_text(json.dumps(manifest))
+            (p/'SHA256SUMS').write_text(''.join(f'{v.sha256(p/n)}  {n}\n' for n in v.file_names(PLAN)))
+            with self.assertRaisesRegex(ValueError,'test signatures'):v.bundle(p,PLAN,CERT,None)
 
-if __name__ == "__main__": unittest.main()
+if __name__ == '__main__':unittest.main()

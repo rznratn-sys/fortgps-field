@@ -1,4 +1,4 @@
-name: Field release (build, isolated signing, verified publication)
+name: Field unsigned build and Pi-local release
 on:
   pull_request:
     paths: ['scripts/release/**', 'tests/test_release_pipeline.py', '.github/workflows/publish-alpha3.yml']
@@ -6,10 +6,17 @@ on:
     paths: ['scripts/release/**', 'tests/test_release_pipeline.py', '.github/workflows/publish-alpha3.yml']
   workflow_dispatch:
     inputs:
-      publish:
-        description: 'Sign and publish ONLY after owner recovery drill and environment approval'
-        type: boolean
-        default: false
+      operation:
+        description: 'Build unsigned APK, or later validate/publish an owner-signed draft'
+        type: choice
+        options: [build, publish]
+        default: build
+      draft_release_id:
+        description: 'Existing complete draft ID (publish only)'
+        type: string
+      build_run_id:
+        description: 'Approved successful unsigned main build run (publish only)'
+        type: string
 permissions:
   contents: read
 concurrency:
@@ -19,10 +26,12 @@ env:
   PYTHONDONTWRITEBYTECODE: '1'
 jobs:
   build:
+    if: github.event_name != 'workflow_dispatch' || inputs.operation == 'build'
     runs-on: ubuntu-24.04
     timeout-minutes: 40
     outputs:
       artifact: ${{ steps.unsigned.outputs.artifact-id }}
+      tool: ${{ steps.portable.outputs.artifact-id }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -56,6 +65,19 @@ jobs:
         with:
           packages: platform-tools
       - run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+      - name: Record portable signing tool fingerprint (no keys)
+        id: tool
+        run: |
+          mkdir portable-tool
+          cp "$ANDROID_HOME/build-tools/35.0.0/lib/apksigner.jar" portable-tool/
+          sha256sum portable-tool/apksigner.jar
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        id: portable
+        with:
+          name: field-apksigner-${{ github.run_id }}-${{ github.run_attempt }}
+          path: portable-tool/
+          if-no-files-found: error
+          retention-days: 7
       - run: python3 -m pip install -r source/integration/requirements.txt
       - name: Build and test approved source WITHOUT signing material
         working-directory: source
@@ -68,10 +90,24 @@ jobs:
       - name: Collect only unsigned APK and public build evidence
         run: |
           set -euo pipefail
-          mkdir unsigned
-          cp source/android/app/build/outputs/apk/release/app-release-unsigned.apk unsigned/app-release-unsigned.apk
-          python3 pipeline/scripts/release/verify.py evidence --plan pipeline/scripts/release/plan.json --source source --python-report "$RUNNER_TEMP/python-tests.txt" --pipeline-report "$RUNNER_TEMP/pipeline-tests.txt" --directory unsigned
-          cat unsigned/build-evidence.json
+          mkdir unsigned evidence
+          "$ANDROID_HOME/build-tools/35.0.0/zipalign" -P 16 -f 4 source/android/app/build/outputs/apk/release/app-release-unsigned.apk unsigned/unsigned.apk
+          python3 pipeline/scripts/release/verify.py evidence --plan pipeline/scripts/release/plan.json --source source --python-report "$RUNNER_TEMP/python-tests.txt" --pipeline-report "$RUNNER_TEMP/pipeline-tests.txt" --directory evidence
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging unsigned/unsigned.apk > "$RUNNER_TEMP/badging.txt"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump xmltree unsigned/unsigned.apk AndroidManifest.xml > "$RUNNER_TEMP/manifest.txt"
+          cp pipeline/docs/field2/release/{INSTALL.md,RELEASE_NOTES.md} unsigned/
+          PYTHONPATH=pipeline/scripts/release python3 - <<'PYCODE'
+          import json, os
+          from pathlib import Path
+          from handoff import create_input, plan
+          from verify import identity, manifest_flags
+          p=plan()
+          identity(Path(os.environ['RUNNER_TEMP']+'/badging.txt').read_text(),p)
+          manifest_flags(Path(os.environ['RUNNER_TEMP']+'/manifest.txt').read_text())
+          meta=create_input(Path('unsigned'),p,json.load(open('evidence/build-evidence.json')),os.environ['GITHUB_SHA'],os.environ['GITHUB_RUN_ID'],os.environ['GITHUB_RUN_ATTEMPT'])
+          print('APPROVED UNSIGNED SHA-256:',meta['unsigned_sha256'])
+          print(json.dumps(meta['build'],indent=2))
+          PYCODE
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         id: unsigned
         with:
@@ -79,88 +115,57 @@ jobs:
           path: unsigned/
           if-no-files-found: error
           retention-days: 7
-  sign:
+  crypto-test:
     needs: build
-    outputs:
-      artifact: ${{ steps.delivery.outputs.artifact-id }}
-    if: github.event_name == 'workflow_dispatch' && inputs.publish && github.repository == 'rznratn-sys/fortgps-field' && github.ref == 'refs/heads/main'
-    environment: field-release
-    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 15
-    env:
-      FIELD_RELEASE_CERT_SHA256: ${{ vars.FIELD_RELEASE_CERT_SHA256 }}
-      FIELD_KEY_BACKUP_VERIFIED_AT: ${{ vars.FIELD_KEY_BACKUP_VERIFIED_AT }}
     steps:
-      - name: Enforce owner-approved pipeline and recovery attestation
-        env:
-          APPROVED_PIPELINE: ${{ vars.FIELD_RELEASE_PIPELINE_SHA }}
-          BACKUP_CERT: ${{ vars.FIELD_KEY_BACKUP_CERT_SHA256 }}
-        run: |
-          python3 - <<'PY'
-          import datetime, os, re
-          e=os.environ
-          assert re.fullmatch('[0-9a-f]{40}', e['APPROVED_PIPELINE']) and e['APPROVED_PIPELINE']==e['GITHUB_SHA'], 'Pipeline commit not approved'
-          assert re.fullmatch('[0-9a-f]{64}', e['FIELD_RELEASE_CERT_SHA256']), 'Missing approved certificate'
-          assert e['BACKUP_CERT']==e['FIELD_RELEASE_CERT_SHA256'], 'Backup certificate mismatch'
-          date=datetime.datetime.strptime(e['FIELD_KEY_BACKUP_VERIFIED_AT'], '%Y-%m-%dT%H:%M:%SZ').replace(tzinfo=datetime.timezone.utc)
-          assert date <= datetime.datetime.now(datetime.timezone.utc), 'Invalid recovery attestation'
-          PY
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
-          ref: ${{ github.sha }}
           persist-credentials: false
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: '17'
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           artifact-ids: ${{ needs.build.outputs.artifact }}
           merge-multiple: true
           path: unsigned
-      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
-          distribution: temurin
-          java-version: '17'
-      - uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3
-        with:
-          packages: platform-tools
-      - run: sdkmanager 'build-tools;35.0.0'
-      - name: Sign prebuilt APK; never execute Gradle or application code here
-        env:
-          FIELD_RELEASE_KEYSTORE_BASE64: ${{ secrets.FIELD_RELEASE_KEYSTORE_BASE64 }}
-          FIELD_STORE_PASSWORD: ${{ secrets.FIELD_STORE_PASSWORD }}
-          FIELD_KEY_PASSWORD: ${{ secrets.FIELD_KEY_PASSWORD }}
-          FIELD_KEY_ALIAS: ${{ secrets.FIELD_KEY_ALIAS }}
-        run: bash scripts/release/sign.sh
-      - name: Verify identity and assemble public delivery
-        run: |
-          cp unsigned/build-evidence.json delivery/
-          cp docs/field2/release/INSTALL.md delivery/INSTALL.md
-          cp docs/field2/release/RELEASE_NOTES.md delivery/RELEASE_NOTES.md
-          python3 scripts/release/verify.py assemble --plan scripts/release/plan.json --directory delivery --tools "$ANDROID_HOME/build-tools/35.0.0"
+          artifact-ids: ${{ needs.build.outputs.tool }}
+          merge-multiple: true
+          path: portable-tool
+      - name: Test real signing with disposable keys; never publish test APKs
+        run: python3 scripts/release/integration_signing.py --input unsigned --jar portable-tool/apksigner.jar --report crypto-report.json
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        id: delivery
         with:
-          name: field-delivery-${{ github.run_id }}-${{ github.run_attempt }}
-          path: delivery/
+          name: field-crypto-report-${{ matrix.runner }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: crypto-report.json
           if-no-files-found: error
           retention-days: 7
   publish:
-    needs: sign
+    if: github.event_name == 'workflow_dispatch' && inputs.operation == 'publish' && github.ref == 'refs/heads/main' && vars.FIELD_PUBLICATION_ENABLED == 'true'
     environment: field-publication
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 20
     permissions:
       contents: write
+      actions: read
     env:
       FIELD_RELEASE_CERT_SHA256: ${{ vars.FIELD_RELEASE_CERT_SHA256 }}
+      FIELD_KEY_BACKUP_VERIFIED_AT: ${{ vars.FIELD_KEY_BACKUP_VERIFIED_AT }}
+      FIELD_RELEASE_PIPELINE_SHA: ${{ vars.FIELD_RELEASE_PIPELINE_SHA }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
-        with:
-          artifact-ids: ${{ needs.sign.outputs.artifact }}
-          merge-multiple: true
-          path: delivery
       - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
         with:
           distribution: temurin
@@ -169,10 +174,12 @@ jobs:
         with:
           packages: platform-tools
       - run: sdkmanager 'build-tools;35.0.0'
-      - name: Verify bundle and publish without replacing any release or tag
+      - name: Independently validate original build and owner-signed draft; then publish
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: rznratn-sys/fortgps-field
+          DRAFT_RELEASE_ID: ${{ inputs.draft_release_id }}
+          BUILD_RUN_ID: ${{ inputs.build_run_id }}
         run: bash scripts/release/publish.sh
   public-readback:
     needs: publish
