@@ -1,0 +1,9 @@
+{
+  "repository": "rznratn-sys/fortgps-field",
+  "source_commit": "f04dba7c2147bf1041482e6c2e872325c5a4633e",
+  "package": "cz.fortgps.field",
+  "version_name": "2.0.0-alpha3",
+  "version_code": 20002,
+  "tag": "v2.0.0-alpha3",
+  "apk_name": "FortGPS_Field_2.0.0-alpha3.apk"
+}
