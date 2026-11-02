@@ -54,3 +54,13 @@ pi_preflight ověří celý skutečný APK workflow lokálně s dočasným RSA 4
 Produkční create nyní vyžaduje předchozí preflight a dvě obnovené testovací zálohy;
 lab/cloud záznam nesmí produkci odemknout. Produkční signer navíc vyžaduje dvě
 skutečně obnovené kopie v konečném backup receipt. Nic produkčního se nevytváří.
+
+JDK 21 fáze dokončena v cloudu: finální main CI 41505335151 a delivery 41505354278
+jsou success, JDK 17/21 × x86_64/aarch64, Python 3.13.5. Každá kombinace 31 release
+Python testů a 10 skutečných RSA 4096 podpisových kontrol; původních 14 Python a
+53/3 JUnit z f04dba7 zůstávají. ARM64 Java i keytool 21.0.13 jsou přímo v reportu.
+Fyzický vec-pi5 má jen základní kontroly oznámené vlastníkem; úplný test, USB a
+nezávislé úložiště zůstávají jeho kroky. Neinstaluje se paralelní JDK 17.
+Readiness ověřuje aktuální Java/keytool/Python, GPG, host a USB UUID před produkčním
+create; klíč musí vzniknout ve stejné ověřené privátní Pi složce. Pouhá PKCS12
+ochrana není vydávána za celou strategii šifrovaných nezávislých záloh.
