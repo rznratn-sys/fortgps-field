@@ -12,3 +12,8 @@ private/
 *.apk
 credentials*.json
 token*.json
+
+# Long-term signing material and local recovery receipts
+*.p12
+*.pfx
+*-recovery.json
