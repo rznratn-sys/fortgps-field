@@ -41,7 +41,9 @@ findmnt --version
 
 Při chybějícím gpg/findmnt zastav; nic automaticky neinstaluj, neměň služby/profily/
 update-alternatives ani konfiguraci Věc. Používá se pouze nová složka FortGPS. Je-li
-Pi vytížené kamerami/Věc, odlož test. Limity heapu JVM nejsou garancí celkové zátěže.
+Pi vytížené kamerami/Věc, odlož test. Níže uvedené nice mění jen prioritu
+jednoho testovacího procesu a jeho potomků, nikoli služby. Limity heapu ani nice
+nejsou garancí volné RAM nebo nulového vlivu při vytíženém zařízení.
 
 ## 2. Získání nových schválených nástrojů a unsigned testovacího vstupu
 
@@ -56,14 +58,18 @@ git fetch origin <CELE_SCHVALENE_SHA_NASTROJU>
 git switch --detach <CELE_SCHVALENE_SHA_NASTROJU>
 ```
 
-Ze schváleného úspěšného PR CI stáhni artifact `field-unsigned-<RUN_ID>-1.zip`.
+Konkrétní úspěšný testovací běh je
+https://github.com/rznratn-sys/fortgps-field/actions/runs/41505335151
+(z této fáze, nepředstavuje produkční main build). Z něj stáhni artifact `field-unsigned-41505335151-1.zip`.
 Je to jen unsigned APK a veřejný handoff, nikoli klíč. Jeho upload do testu/stažení
 z Androidu a SCP na Pi je povolené. `github_io.py` správně odmítá PR jako produkční
 build; **neobcházej jeho main-only kontrolu**. Pro tento dočasný test použij PR artifact
-stažený přes GitHub UI. Příklad přenosu z Termuxu (uprav pouze název veřejného ZIP):
+stažený přes GitHub UI. Artifacts mají retenci 7 dní; stáhni je včas. Pokud
+vyprší, je nutné znovu sestavit testovací vstup a dosadit nové údaje, nikoli slučovat
+PR jen kvůli testu. Příklad přenosu z Termuxu (uprav pouze název veřejného ZIP):
 
 ```sh
-scp /sdcard/Download/field-unsigned-<RUN_ID>-1.zip operator@vec-pi5:/home/operator/fortgps-release/work/
+scp /sdcard/Download/field-unsigned-41505335151-1.zip operator@vec-pi5:/home/operator/fortgps-release/work/
 ```
 
 V nové složce na Pi rozbal jen očekávané soubory; nespouští se nic z artifactu:
@@ -72,7 +78,7 @@ V nové složce na Pi rozbal jen očekávané soubory; nespouští se nic z arti
 python3 - <<'PY'
 from pathlib import Path
 import zipfile
-src=Path('/home/operator/fortgps-release/work/field-unsigned-<RUN_ID>-1.zip')
+src=Path('/home/operator/fortgps-release/work/field-unsigned-41505335151-1.zip')
 out=Path('/home/operator/fortgps-release/work/pi-signing-test-input')
 expected={'unsigned.apk','handoff.json','INSTALL.md','RELEASE_NOTES.md'}
 with zipfile.ZipFile(src) as z:
@@ -88,6 +94,8 @@ with zipfile.ZipFile(src) as z:
 PY
 ```
 
+Níže jsou již dosazené veřejné hodnoty tohoto běhu. Z CI logu je nezávisle porovnej;
+pro jiný artifact je nutné změnit celou trojici SHA/run/hash, ne jen jeho jméno.
 Z CI logu ověř source f04dba7c2147bf1041482e6c2e872325c5a4633e a opiš veřejné
 `APPROVED UNSIGNED SHA-256`, celý pipeline SHA a run ID. Neber hash jen z téhož ZIP.
 
@@ -99,11 +107,11 @@ s platností dva dny, zkouška podpisu/ověření a kontrola obnovy, pak odstran
 
 ```sh
 cd /home/operator/fortgps-release/repo
-python3 scripts/release/pi_preflight.py \
+nice -n 10 python3 scripts/release/pi_preflight.py \
   --input /home/operator/fortgps-release/work/pi-signing-test-input \
   --jar /home/operator/fortgps-release/tools/build-tools-35/apksigner.jar \
-  --pipeline-sha <CELE_SHA_Z_CI> --build-run <RUN_ID> \
-  --unsigned-sha256 <SHA256_Z_CI_LOGU> \
+  --pipeline-sha 1a492bef0c0f766f8b6ad9a03afaa844928162a9 --build-run 41505335151 \
+  --unsigned-sha256 3120c1bbc2d0f8ca97c39ad57c919b7456e20e73a8c89e56f3a2d025655f1ecf \
   --report /home/operator/fortgps-release/private/pi-preflight.json
 ```
 
@@ -134,7 +142,7 @@ ověřeným mountpointem). Připrav pouze TEST archiv. Heslo A pro testovací PK
 odděleně do správce hesel; budou potřeba při dokončení. **Nejde o budoucí produkční hesla.**
 
 ```sh
-python3 scripts/release/recovery_readiness.py prepare \
+nice -n 10 python3 scripts/release/recovery_readiness.py prepare \
   --preflight /home/operator/fortgps-release/private/pi-preflight.json \
   --usb-dir /media/operator/FG_BACKUP \
   --state /home/operator/fortgps-release/private/recovery-drill.json
@@ -156,7 +164,7 @@ Odpojení/ztráta telefonu nesmí současně odstranit jedinou zálohu i jediný
 V nové SSH relaci obnov hesla ze správce/recovery, USB znovu připoj a dokonči:
 
 ```sh
-python3 scripts/release/recovery_readiness.py finish \
+nice -n 10 python3 scripts/release/recovery_readiness.py finish \
   --state /home/operator/fortgps-release/private/recovery-drill.json \
   --second-copy /home/operator/fortgps-release/work/retrieved-TEST.p12.gpg \
   --readiness /home/operator/fortgps-release/private/identity-readiness.json
@@ -174,7 +182,9 @@ rehearsal má production_ready=false a nelze jej použít jako povolení produk�
 - Plný signing preflight prošel na tomto Pi, Pythonu a Javě 21; žádný zásah do Věc.
 - GPG a oba návraty testovacích šifrovaných kopií prošly; USB UUID/disk jsou ověřené.
 - Druhé úložiště je fyzicky/účtem nezávislé, nikoli další oddíl/adresář stejného disku.
-- Hesla/recovery jsou dostupná odděleně od zařízení a médií. Žádné heslo v chatu,
+- Hesla A/B jsou ve správci hesel s ověřenou recovery mimo jediný telefon;
+  recovery může být např. zapečetěná informace na třetím bezpečném místě,
+  odděleném od Pi i USB. Hesla/recovery jsou dostupná odděleně od zařízení a médií. Žádné heslo v chatu,
   shell historii, logu, vedle nezašifrovaného p12 nebo jen ve ztratitelném telefonu.
 - Připravena nová unikátní produkční hesla A (PKCS12) a B (vnější šifrování),
   odlišná od testovacích. Doporučeny náhodné ASCII řetězce ze správce hesel.
