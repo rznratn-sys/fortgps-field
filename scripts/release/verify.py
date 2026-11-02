@@ -66,6 +66,8 @@ def python_count(report):
     match = re.search(r'Ran (\d+) tests?', py)
     if not match or not re.search(r'^OK(?:\s|$)', py, re.M) or re.search(r'^(FAILED|ERROR|FAIL):?', py, re.M):
         raise ValueError('Missing or failing Python tests')
+    if int(match[1]) <= 0:
+        raise ValueError('No Python tests executed')
     return int(match[1])
 
 
@@ -100,7 +102,7 @@ def file_names(plan):
     return [plan['apk_name'], 'release-manifest.json', 'INSTALL.md', 'RELEASE_NOTES.md', 'TEST_REPORT.md']
 
 
-def bundle(directory, plan, cert, tools, pipeline_sha=None):
+def bundle(directory, plan, cert, tools, pipeline_sha=None, jar=None, allow_test=False):
     expected = set(file_names(plan) + ['SHA256SUMS'])
     if {p.name for p in directory.iterdir()} != expected or any(p.is_symlink() or not p.is_file() for p in directory.iterdir()):
         raise ValueError('Unexpected release asset set')
@@ -119,13 +121,24 @@ def bundle(directory, plan, cert, tools, pipeline_sha=None):
     apk = directory/plan['apk_name']
     if manifest.get('apk_sha256') != sha256(apk) or manifest.get('apk_size') != apk.stat().st_size:
         raise ValueError('Manifest APK digest differs')
-    if manifest.get('signer_certificate_sha1') != verify_apk(apk, plan, cert, tools):
+    if manifest.get('schema') != 2 or manifest.get('signing_mode') != 'owner-local':
+        raise ValueError('Local signing provenance required')
+    if type(manifest.get('test_only')) is not bool or (manifest['test_only'] and not allow_test):
+        raise ValueError('Disposable test signatures may never be published')
+    from handoff import timestamp
+    timestamp(manifest['key_backup_verified_at'])
+    if jar:
+        from local_sign import verify_signature
+        actual_sha1=verify_signature(apk,jar,cert)
+    else:
+        actual_sha1=verify_apk(apk,plan,cert,tools)
+    if manifest.get('signer_certificate_sha1') != actual_sha1:
         raise ValueError('Manifest SHA-1 differs from actual certificate')
 
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('command', choices=['evidence', 'assemble', 'bundle'])
+    parser.add_argument('command', choices=['evidence', 'bundle'])
     parser.add_argument('--plan', type=Path, required=True)
     parser.add_argument('--directory', type=Path, required=True)
     parser.add_argument('--source', type=Path)
@@ -144,30 +157,6 @@ def main():
         (args.directory/'build-evidence.json').write_text(json.dumps(data, indent=2)+'\n')
         return
     cert = fingerprint(os.environ.get('FIELD_RELEASE_CERT_SHA256'))
-    if args.command == 'assemble':
-        data = json.loads((args.directory/'build-evidence.json').read_text())
-        if data.pop('source_commit') != plan['source_commit']:
-            raise ValueError('Build evidence source mismatch')
-        (args.directory/'build-evidence.json').unlink()
-        manifest = dict(plan, signer_certificate_sha256=cert, build=data,
-                        pipeline_commit=os.environ['GITHUB_SHA'], run_id=os.environ['GITHUB_RUN_ID'],
-                        key_backup_verified_at=os.environ['FIELD_KEY_BACKUP_VERIFIED_AT'],
-                        physical_samsung_verified=False, samsung_sef_unknown_variants='refused')
-        apk = args.directory/plan['apk_name']
-        manifest['signer_certificate_sha1'] = verify_apk(apk, plan, cert, args.tools)
-        manifest.update(apk_sha256=sha256(apk), apk_size=apk.stat().st_size)
-        (args.directory/'release-manifest.json').write_text(json.dumps(manifest, indent=2)+'\n')
-        j = data['junit']
-        (args.directory/'TEST_REPORT.md').write_text(
-            f"# FortGPS Field {plan['version_name']} release verification\n\nSource: `{plan['source_commit']}`.\n"
-            f"Pipeline: `{os.environ['GITHUB_SHA']}`; Actions run `{os.environ['GITHUB_RUN_ID']}`.\n\n"
-            f"JUnit/Robolectric: {j['tests']} total, {j['tests']-j['skipped']} passed, {j['skipped']} skipped.\n"
-            f"Python source: {data['python_tests']} passed; pipeline: {data['pipeline_python_tests']} passed.\n"
-            f"Lint: {json.dumps(data['lint'])}. Skipped: {json.dumps(data['skipped_tests'])}.\n\n"
-            "Release signature, package, version, SHA-256 and asset readback are pipeline gates.\n"
-            "Physical Samsung installation, live GNSS, Gallery, actual migration and live Drive upload were not tested.\n"
-            "Private backup/JPEG fixtures may be skipped; inspect the source test documentation.\n")
-        (args.directory/'SHA256SUMS').write_text(''.join(f'{sha256(args.directory/name)}  {name}\n' for name in file_names(plan)))
     bundle(args.directory, plan, cert, args.tools, os.environ.get('GITHUB_SHA'))
 
 

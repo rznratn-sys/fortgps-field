@@ -1,159 +1,206 @@
-# Vlastnický postup pro dlouhodobé vydávání
+# Lokální podpis na Raspberry Pi OS ARM64
 
-Žádný nový klíč ani heslo dosud nevznikly. Původní klíč vlastník nemá (potvrzeno
-2. 11. 2026). Tento postup vyžaduje jeho výslovný souhlas před vytvořením/nahráním
-nové identity. Prováděj jej na vlastním důvěryhodném počítači, nikoli Codex Cloud,
-GitHub runneru nebo ve sdíleném terminálu. Nikam nevkládej keystore ani hesla do
-chatu. Base64 je jen kódování soukromého klíče, nikoli šifrování.
+Tento postup **nahrazuje předchozí návrh s klíčem v Actions Secrets**.
+Soukromý produkční klíč smí být pouze na vlastním Pi a v nezávislých šifrovaných
+zálohách. Příkaz pro upload keystore byl odstraněn. GitHub dostane pouze
+podepsaný APK, veřejný certifikát/otisky a dokumentaci. Zatím jde pouze o přípravu:
+žádné produkční klíče, změny Pi/Věc, migrace, sloučení PR nebo publikace.
 
-## 1. Kontrola a instalace pipeline
+## Rozdělení práce
 
-Zkontroluj PR, zejména workflow, `scripts/release/plan.json`, sign.sh a upload.
-Kontrolní soubory pipeline musí být na výchozí větvi `main`; zdroj aplikace se
-vždy checkoutuje zvlášť podle plného commitu v plan.json. Nepřepisuj webovou
-aplikaci na main celým obsahem vývojové větve. PR pro main přidává pouze release
-nástroje, workflow, jeho testy a tyto návody. Druhý PR do delivery větve vypne
-původní automatické podepisování při push.
+1. GitHub Actions: přesný schválený commit aplikace, testy, debug/release lint,
+   unsigned release, `zipalign -P 16`, kontrola package/verzí/debug flags.
+2. GitHub přidá handoff.json s SHA-256 APK, úplným ZIP inventářem, zdrojem,
+   pipeline commitem, run ID a výsledky testů. Samostatné CI zkusí skutečný podpis
+   dočasným TEST ONLY klíčem na x86-64 a ARM64. Testovací APK ani klíč se neuploadují.
+3. Pi: zkontroluje schválený build a hash, lokálně podepíše Java apksigner.jar,
+   ověří podpis a shodu každého původního ZIP souboru. Žádný Gradle ani síť v signeru.
+4. Až po pozdějším samostatném souhlasu: šest veřejných souborů do GitHub draftu.
+   Chráněné ruční workflow stáhne draft i původní unsigned artifact, nezávisle
+   ověří podpis/obsah/metadata, zveřejní a znovu stáhne veřejné soubory.
 
-Po merge spusť nejdřív workflow s `publish=false`. Každý push/PR testuje bez
-signing secrets. `publish=true` je povolen pouze z main a pouze pro přesný
-`FIELD_RELEASE_PIPELINE_SHA`. Nastav tento otisk na **výsledný main commit po
-merge**, nikoli na původní SHA PR. Každá úprava pipeline vyžaduje nové schválení.
+Raspberry Pi nebude self-hosted runner. Žádné služby, otevřené porty, Docker,
+změny apt/profilů/cronu/systemd ani zásahy do projektu Věc. Veškeré nové soubory
+patří do nové oddělené složky; existující složku nepřepisuj.
 
-Repozitář musí mít chráněnou main: povinná review změn workflow/nástrojů,
-omezený přímý push, žádné force push, žádné obcházení ochrany administrátory.
-Přidej odpovědného vlastníka pro workflow a nástroje do CODEOWNERS podle skutečné
-správy projektu. Šifrování Secrets nechrání klíč před škodlivým schváleným workflow.
+## 1. Až budeš doma: nezapisující kontrola
 
-V Settings → Environments vytvoř:
+Na Pi nejprve pouze `uname -m`, `cat /etc/os-release`, `python3 --version`,
+`java -version` a `df -h`. Požadavek: Linux aarch64/arm64, Python 3.11+, JDK 17.
+Neměň sdílený Java runtime projektu Věc. Pokud není vhodný JDK, stáhni samostatný
+**Linux ARM64 JDK 17** (např. Temurin), porovnej archiv s publikovaným SHA-256
+výrobce a rozbal jej do vlastní nové složky. Totéž pro ARM64 gh CLI, pokud není
+k dispozici. Žádné `sudo`, apt install, update-alternatives ani změny `.bashrc`.
 
-- `field-release`: selected deployment branches/tags = **jen branch main**,
-  required reviewers s nezávislým důvěryhodným schvalovatelem a prevent self review.
-  Neumožňuj admin bypass. Jen zde budou čtyři podpisové secrets.
-- `field-publication`: jen branch main, required review před publikací.
-  Toto prostředí neobsahuje keystore ani hesla.
-
-Pokud plán GitHubu nebo jednočlenná správa nezávislou review neumožňuje, tento
-přísný postup se zastaví. Neodstraňuj kontroly; zajisti důvěryhodného reviewera
-nebo samostatně navrhni a schval lokální podepisování s oddělenou publikací.
-
-Před nahráním nového klíče prohlédni **názvy/metadatové seznamy**, nikoli hodnoty:
+Příklad rozložení (pouze nové soubory; při existenci nejdřív zastav a zkontroluj):
 
 ```sh
-gh secret list --repo rznratn-sys/fortgps-field
-gh secret list --repo rznratn-sys/fortgps-field --env field-release
+mkdir "$HOME/fortgps-release"
+mkdir -m 700 "$HOME/fortgps-release/private"
+mkdir "$HOME/fortgps-release/tools" "$HOME/fortgps-release/work"
+git clone https://github.com/rznratn-sys/fortgps-field.git "$HOME/fortgps-release/repo"
 ```
 
-V osobním repozitáři nejsou organizační secrets. Přezkoumej i další existující
-Environments v Settings a vlastní správce hesel/zálohy. Actions Secrets nelze
-zpětně stáhnout jako soukromý keystore. Klíč nesmí být repository secret, protože
-by byl dostupný i jiným workflow/větvím. Případné staré repository signing secrets
-odstraň až po vlastnické kontrole, bez vypisování hodnot. Tento audit je nesmazal.
+Po schválení/merge PR checkoutuj přesný odsouhlasený main commit. Níže `<pipeline>`
+znamená jeho celý 40hex SHA, ne pohyblivou větev. Vše prováděj z tohoto checkoutu.
+V každém příkazu lze použít `FORTGPS_JAVA_HOME=/cesta/k/soukromemu/jdk-17`;
+platí pouze pro tento proces a nepřepíná systémovou Javu.
 
-## 2. Vytvoření identity až po souhlasu vlastníka
+## 2. Přenosný podpisový nástroj
 
-JDK 17 (`keytool`), Python 3.11+ a autentizovaný `gh` CLI na vlastním počítači.
-Stáhni a zkontroluj nástroje ze schváleného commitu. Vypni shell tracing a záznam
-terminálu; neukládej hesla do historie. Použij dlouhé unikátní heslo ve správci
-hesel. Nástroj nepřijímá heslo jako argument a používá PKCS12 s jediným heslem.
+Linux Android SDK obsahuje nativní x86-64 aapt/zipalign: **na ARM je nespouštěj**.
+Potřebujeme pouze `lib/apksigner.jar` z Build Tools **35.0.0**, který používá JVM.
+Jeho schválený SHA-256 je připnutý v `scripts/release/tools-lock.json`.
+
+Stáhni oficiální Linux Build Tools 35.0.0 archiv z Android SDK repository na
+počítači/Pi (nebo jej přenes). Extrahuj jen ověřený JAR, nikoli celý SDK do systému:
 
 ```sh
-python3 scripts/release/owner_key.py create \
-  --keystore /vlastni/soukrome/fortgps-field-release.p12
+python3 scripts/release/portable_tools.py \
+  --sdk-archive /cesta/build-tools-linux-35.zip \
+  --output "$HOME/fortgps-release/tools/build-tools-35"
+FORTGPS_JAVA_HOME=/cesta/jdk-17 /cesta/jdk-17/bin/java -jar \
+  "$HOME/fortgps-release/tools/build-tools-35/apksigner.jar" version
 ```
 
-Nástroj se ještě interaktivně zeptá na CREATE a heslo. RSA 4096, platnost 10000
-dní, alias `field-release`. Nezaměňuj debug klíč. Nový veřejný SHA-256 si ulož
-nezávisle; SHA-1 pro OAuth získáš lokálně:
+Výstupní složka musí být nová. Nástroj nepouští SDK installery, nekonfiguruje
+PATH a odmítne jiný JAR. Alternativně přenes samostatný `field-apksigner-*` CI
+artifact a zkontroluj **stejný připnutý SHA-256**. Neber otisk jen ze stejného
+neověřeného stažení. JAR je spustitelný kód s přístupem ke klíči: jeho kontrolu
+nelze nahradit pouhou kontrolou APK.
+
+## 3. Nový produkční klíč — až po budoucím výslovném souhlasu
+
+Nyní se tento krok neprovádí. Na vlastním ARM64 Pi, v interaktivním terminálu:
 
 ```sh
-keytool -list -v -keystore /vlastni/soukrome/fortgps-field-release.p12 -alias field-release
+FORTGPS_JAVA_HOME=/cesta/jdk-17 python3 scripts/release/owner_key.py create \
+  --keystore "$HOME/fortgps-release/private/fortgps-release.p12"
 ```
 
-Soukromý soubor není chráněn tím, že má příponu p12: chraň přístup k počítači,
-šifruj disk a zálohy. Heslo neukládej vedle nezašifrovaného keystore.
+Nástroj vyžaduje CREATE, dlouhé heslo zadávané skrytě a nepřepisuje existující
+soubor. PKCS12, RSA 4096, alias field-release, platnost 10000 dnů. Žádné heslo
+v argumentech/historii/logu; nikdy neposílej p12 ani heslo do chatu nebo GitHubu.
+Produkční vytvoření/signing je v CI zakázané; testy používají jiný explicitní režim.
 
-## 3. Nezávislé zálohy a skutečný test obnovy
+Udělej šifrovanou zálohu na odpojeném médiu a druhou nezávislou šifrovanou zálohu
+na jiném místě. Heslo/recovery ulož nezávisle do správce hesel, nikoli vedle p12.
+Nešifrovaná pracovní kopie zůstává pouze na Pi. Šifruj i jeho disk/privátní úložiště
+podle svého provozního návrhu — tento projekt nastavení Pi automaticky nemění.
 
-Uchovej primární keystore, šifrovanou kopii na odpojeném médiu a druhou nezávislou
-šifrovanou kopii na jiném místě/účtu. Heslo a postup obnovy ulož do správce hesel
-s vlastním nezávislým recovery postupem. GitHub Secrets nejsou záloha klíče.
-
-Z odpojeného média **obnov** kopii do nové privátní složky. Ověř obnovu hesla
-ze správce, nikoli jen z paměti. Následující příkaz porovná soubory a certifikát
-a vytvoří CSR z obou private-key entries, čímž ověří přístup k soukromému klíči:
+Obnov z média kopii zpět do jiné privátní složky **na Pi** a ověř heslo z recovery:
 
 ```sh
-python3 scripts/release/owner_key.py verify-backup \
-  --keystore /vlastni/soukrome/fortgps-field-release.p12 \
-  --restored /obnoveno/fortgps-field-release.p12 \
-  --receipt /vlastni/soukrome/fortgps-recovery.json
+FORTGPS_JAVA_HOME=/cesta/jdk-17 python3 scripts/release/owner_key.py verify-backup \
+  --keystore "$HOME/fortgps-release/private/fortgps-release.p12" \
+  --restored /privatni-obnovena-slozka/fortgps-release.p12 \
+  --receipt "$HOME/fortgps-release/private/fortgps-recovery.json"
 ```
 
-Potvrdíš BACKUP VERIFIED teprve po skutečné kontrole nezávislosti zálohy a hesla.
-Nástroj rozpozná shodný inode a jiné bajty; fyzickou nezávislost média nebo
-obnovitelnost účtu musí ověřit vlastník. Receipt obsahuje otisky/čas/alias, nikoli
-klíč či heslo; uchovej jej soukromě. Nezašifrovanou obnovenou pracovní kopii po
-kontrole bezpečně odstraň podle vlastností svého média. Hlavní zálohy ponech.
+Porovnají se bajty, veřejný certifikát a skutečný přístup k private-key entry přes
+CSR. BACKUP VERIFIED potvrď až po fyzickém ověření nezávislosti médií a hesla.
+Receipt zůstává soukromý na Pi. Ani receipt, hash souboru keystore, obnovovací
+kopie nebo heslo se do release nepřidávají. Ochrana keystore musí být mode 600.
 
-## 4. Předání do chráněného Environment
+## 4. Unsigned sestavení a ověření přenosu
 
-Až po souhlasu vlastníka s nahráním, s platným receipt a po konfiguraci review:
+Po review/merge spusť workflow `Field unsigned build and Pi-local release` na main,
+`operation=build`. Zdroj alpha3 musí zůstat f04dba7c2147bf1041482e6c2e872325c5a4633e.
+Čekej na úspěšné build **i obě crypto-test větve**. Zkontroluj výsledky, source/pipeline
+SHA a z logu „APPROVED UNSIGNED SHA-256“ nezávisle opiš `<unsigned-hash>`.
+
+Pro gh používej případně novou privátní konfiguraci přes `GH_CONFIG_DIR`; neměň
+autentizaci jiného projektu. Read-only účet/token pro download stačí. Stahování
+probíhá bez jakékoli cesty ke klíči:
 
 ```sh
-python3 scripts/release/owner_key.py upload \
-  --keystore /vlastni/soukrome/fortgps-field-release.p12 \
-  --receipt /vlastni/soukrome/fortgps-recovery.json \
-  --pipeline-sha <40-hex-vysledny-main-commit>
+GH_CONFIG_DIR="$HOME/fortgps-release/private/gh" \
+python3 scripts/release/github_io.py --run <run-id> --pipeline-sha <pipeline> \
+  --unsigned-sha256 <unsigned-hash> \
+  --output "$HOME/fortgps-release/work/alpha3-input"
 ```
 
-Nástroj kontroluje ochranu `field-release` (jen main a nezávislý reviewer),
-matching receipt a certifikát. Vyžádá samostatné potvrzení UPLOAD. Tajné hodnoty
-předává do `gh secret set` přes stdin, nikdy přes argumenty nebo logy.
-Nahraje pouze Environment Secrets `FIELD_RELEASE_KEYSTORE_BASE64`,
-`FIELD_STORE_PASSWORD`, `FIELD_KEY_PASSWORD`, `FIELD_KEY_ALIAS` a veřejné proměnné:
-`FIELD_RELEASE_CERT_SHA256`, `FIELD_KEY_BACKUP_CERT_SHA256`,
-`FIELD_KEY_BACKUP_VERIFIED_AT`, `FIELD_RELEASE_PIPELINE_SHA`.
-Veřejný schválený SHA-256 zároveň nastaví jako repository variable pro publikaci
-a nezávislý readback. Nástroj nespouští vydání. Po částečném selhání naprav
-konfiguraci a zopakuj celý upload; neupravuj kontroly, aby prošly.
+Nástroj odmítne PR/feature/failed build nebo jiný pipeline commit. Vstup musí
+obsahovat právě unsigned.apk, handoff.json, INSTALL.md, RELEASE_NOTES.md.
+Zkontroluje skutečný SHA-256, unsigned stav, zarovnání, každou ZIP položku, návody,
+plan a testové výsledky. Package/verze/debug flags byly nezávisle ověřeny aapt
+při sestavení; na Pi se jejich binární manifest nesmí změnit ani o bajt.
 
-## 5. Vydání alpha3
+## 5. Offline lokální podpis
 
-Spusť `Field release` na main s `publish=true`. Review prostředí ověřuje zdroj,
-výsledný pipeline commit, backup attestation a certifikát. Build/test/lint běží
-bez signing secrets. Podpisový job na novém runneru nikdy nespouští Gradle ani
-aplikační kód. Dekódovaný klíč je v privátním RUNNER_TEMP, trap jej odstraní.
-Žádné cachování signing jobu, dump prostředí ani upload pracovního adresáře.
+Odpoj síť, pokud to provoz projektu Věc dovoluje; **neodpojuj ji automaticky**.
+Samotný signer síť nepoužívá. Zachovej provoz Věc. Podepisování běží pouze jako
+jednorázový proces s privátními soubory; výstupní složka musí být nová:
 
-Publikace nejprve odmítne existující release **i tag**. Vytvoří draft, stáhne
-všech šest assetů a ověří bajty, kontrolní součty, balíček/verzi a apksigner.
-Teprve pak zveřejní prerelease. Další runner stáhne veřejné soubory bez tokenu
-a ověří je znovu. Artefakty se mezi joby předávají přes výstupní ID, včetně opakování pouze
-neúspěšného signing jobu; nikdy přes volné hledání v jiném běhu.
-Při selhání ponech draft/release k prošetření; pipeline jej
-nikdy automaticky nepřepisuje ani nemaže. Oprava/nahrazení assetů vyžaduje nové
-konkrétní zdůvodnění a souhlas vlastníka. Do té doby vydání nepovažuj za ověřené.
+```sh
+FORTGPS_JAVA_HOME=/cesta/jdk-17 python3 scripts/release/local_sign.py \
+  --input "$HOME/fortgps-release/work/alpha3-input" \
+  --output "$HOME/fortgps-release/work/alpha3-delivery" \
+  --keystore "$HOME/fortgps-release/private/fortgps-release.p12" \
+  --receipt "$HOME/fortgps-release/private/fortgps-recovery.json" \
+  --jar "$HOME/fortgps-release/tools/build-tools-35/apksigner.jar" \
+  --pipeline-sha <pipeline> --build-run <run-id> --unsigned-sha256 <unsigned-hash>
+```
 
-Předinstalační migrace je v INSTALL.md. Nenahlašuj fyzické Samsung ověření bez
-skutečného provedení a evidence.
+Potvrď SIGN 2.0.0-alpha3 a zadej heslo skrytě. Signer kontroluje zálohu/certifikát,
+v1/v2/v3 podpis, správnou identitu a úplnou shodu původních ZIP entries;
+smí přibýt jen tři pevně pojmenované podpisové soubory. Nezarovnává APK po podpisu.
+Chyba nezpřístupní částečný delivery adresář. Veřejný výstup má přesně šest souborů:
+APK, release-manifest.json, SHA256SUMS, INSTALL.md, RELEASE_NOTES.md, TEST_REPORT.md.
+Žádný privátní soubor se nekopíruje. `--test-only` není produkční zkratka:
+jeho výstupy jsou označené a staging/publikace je odmítnou.
 
-## 6. Obnova a alpha4
+## 6. Pozdější publikace — nyní zakázaný krok
 
-Při ztrátě pracovního počítače obnov stejný p12 a heslo z nezávislých záloh,
-zopakuj certifikát/CSR test a porovnej s uloženým veřejným otiskem i alpha3
-manifestem. Obnov Secrets stejným upload nástrojem. Negeneruj náhradní klíč jen
-proto, že je počítač nový. Klíč nelze obnovit ze samotného certifikátu ani APK.
+Zatím se nevytváří ani draft. Po samostatném souhlasu vlastníka nastav na GitHubu
+pouze **veřejné** variables FIELD_RELEASE_CERT_SHA256, FIELD_KEY_BACKUP_VERIFIED_AT,
+FIELD_RELEASE_PIPELINE_SHA. Nikdy signing secrets. Ponech FIELD_PUBLICATION_ENABLED
+prázdné/false, dokud nechceš skutečně vydat.
 
-Pro alpha4 použij **stejný** keystore/alias/certifikát. V samostatně schváleném
-zdrojovém commitu změň versionName a zvyš versionCode (např. 20003, pokud dosud
-nebyl použit). Uprav plan.json (commit, verze, tag, APK jméno), release notes,
-instalační pokyny a očekávání testů identity. Revizi pipeline schval reviewem,
-aktualizuj FIELD_RELEASE_PIPELINE_SHA a spusť nejdřív publish=false. Až pak
-publish=true. Nový klíč se pro alpha4 nevytváří. Kontrola parseru alpha4 se stejným
-certifikátem je automaticky testovaná; skutečná instalace následné verze na
-telefonu dosud provedena nebyla.
+Chraň main reviewem/omezeným pushem a Environment `field-publication`: pouze main,
+required reviewer, prevent self review, žádný admin bypass. Žádné prostředí
+field-release s privátním klíčem už není potřeba. Pokud předchozí nastavení někde
+existuje, nyní je nemažeme; před budoucím vydáním je vlastník zkontroluje podle názvů,
+nikoli zveřejněním hodnot. Přístup k těmto nastavením z připojené integrace není úplný.
 
-Opakovatelný postup neznamená zaručenou bitovou shodu buildů. Runner/SDK a JDK
-mohou dostávat aktualizace; actions jsou připnuté plnými commity a Gradle ZIP
-má ve zdroji SHA-256. Aktualizace závislostí/actions dělej přes review.
+Nejprve pouze validuj veřejný bundle lokálně (bez --create-draft = bez uploadu):
+
+```sh
+FORTGPS_JAVA_HOME=/cesta/jdk-17 python3 scripts/release/stage_bundle.py \
+  --directory "$HOME/fortgps-release/work/alpha3-delivery" \
+  --input "$HOME/fortgps-release/work/alpha3-input" \
+  --jar "$HOME/fortgps-release/tools/build-tools-35/apksigner.jar" \
+  --pipeline-sha <pipeline> --build-run <run-id> \
+  --unsigned-sha256 <unsigned-hash> --cert-sha256 <verejny-certifikat-sha256>
+```
+
+Až s pozdějším souhlasem přidej --create-draft a potvrď STAGE v2.0.0-alpha3.
+Transportuje se pouze šest vyjmenovaných veřejných souborů. Existující draft,
+release nebo tag se nepřepisuje. GitHub oprávnění pro draft upload jsou oddělená
+od signing hesla; tento nástroj nemá parametr pro keystore ani heslo.
+
+Nakonec vlastník výslovně povolí FIELD_PUBLICATION_ENABLED=true a ruční operation=publish
+s draft_release_id a build_run_id. Chráněné workflow nezávisle stáhne původní
+unsigned artifact z úspěšného schváleného main buildu, ověří přesný obsah proti
+podepsanému APK, skutečný certifikát/aapt metadata/zipalign/checksumy a shodu backup
+attestation. Testovací identity se odmítnou. Teprve potom zveřejní již ověřený draft.
+Další runner stáhne veřejné soubory bez release tokenu a znovu je ověří.
+Selhání se řeší vyšetřením; žádné automatické mazání nebo nahrazování assets.
+
+## Alpha4 a obnova
+
+Použij stejný p12, alias, certifikát a ověřené nezávislé zálohy. Na novém počítači
+nikdy negeneruj náhradní klíč jen kvůli obnově zařízení; obnov jej zpět na vlastní
+Pi a ověř certifikát/CSR. GitHub nemá soukromou kopii klíče a neumí ji obnovit.
+
+Pro alpha4 schval nový zdrojový commit, versionName, vyšší nepoužitý versionCode
+(např. 20003), tag/APK v plan.json a aktuální release notes/instalační pokyny.
+Znovu main build → ověřený download → tentýž Pi klíč → ověřený draft/publikace.
+Každá změna pipeline vyžaduje nový FIELD_RELEASE_PIPELINE_SHA a nový unsigned build.
+Reálný budoucí alpha4 upgrade telefonu není touto infrastrukturální zkouškou prokázán.
+
+Primární reference: https://developer.android.com/tools/apksigner (zipalign před
+podpisem, hesla přes env/stdin, v1-signer-name a verify),
+https://developer.android.com/tools/zipalign,
+https://github.com/actions/partner-runner-images (ubuntu-24.04-arm).
+ARM64 CI je skutečný ARM64 Linux/JVM, nikoli fyzické Raspberry Pi OS/Věc.
