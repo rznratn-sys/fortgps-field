@@ -11,6 +11,10 @@ def java():
     home = os.environ.get('FORTGPS_JAVA_HOME')
     return str(Path(home)/'bin/java') if home else 'java'
 
+def java_command(jar, *args):
+    return [java(), '-Xms16m', '-Xmx256m', '-XX:ActiveProcessorCount=2', '-XX:+UseSerialGC',
+            '-jar', str(jar), *args]
+
 def verify_jar(path):
     lock = json.loads((ROOT/'scripts/release/tools-lock.json').read_text())
     expected = digest(lock['apksigner_jar_sha256'])

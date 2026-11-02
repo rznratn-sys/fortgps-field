@@ -10,13 +10,14 @@ import sys
 import tempfile
 from handoff import ROOT, check_input, digest, exact_files, payload_equal, plan, sha, timestamp
 from owner_key import cert, external, run
-from portable_tools import java, verify_jar
+from portable_tools import java_command, verify_jar
 import verify as public_verify
 
 
-def verify_signature(apk, jar, expected):
-    text=run([java(),'-jar',str(jar),'verify','--verbose','--print-certs',str(apk)]).decode()
+def verify_signature(apk, jar, expected, allow_test=False):
+    text=run(java_command(jar,'verify','--verbose','--print-certs',str(apk))).decode()
     public_verify.certificate(text,expected)
+    public_verify.reject_test_certificate(text,allow_test)
     import re
     values=re.findall(r'^Signer #1 certificate SHA-1 digest: ([0-9a-fA-F]{40})$',text,re.M)
     if len(values)!=1:
@@ -51,12 +52,12 @@ def sign_bundle(input_dir, output, key, receipt, jar, p, pipeline, run_id, unsig
     with tempfile.TemporaryDirectory(prefix='.field-sign-',dir=output.parent) as temp:
         staging=Path(temp)
         apk=staging/p['apk_name']
-        run([java(),'-jar',str(jar),'sign','--ks',str(key),'--ks-key-alias',data['alias'],
+        run(java_command(jar,'sign','--ks',str(key),'--ks-key-alias',data['alias'],
              '--ks-pass','env:FIELD_OWNER_PASSWORD','--key-pass','env:FIELD_OWNER_PASSWORD',
              '--v1-signer-name','FIELD','--v1-signing-enabled','true','--v2-signing-enabled','true',
              '--v3-signing-enabled','true','--v4-signing-enabled','false','--out',str(apk),
-             str(Path(input_dir)/'unsigned.apk')],password=password)
-        sha1=verify_signature(apk,jar,data['certificate_sha256'])
+             str(Path(input_dir)/'unsigned.apk')),password=password)
+        sha1=verify_signature(apk,jar,data['certificate_sha256'],allow_test=test_only)
         payload_equal(apk,meta['entries'])
         manifest=dict(p, schema=2, signing_mode='owner-local', test_only=bool(test_only),
                       pipeline_commit=meta['pipeline_commit'],run_id=meta['run_id'],run_attempt=meta['run_attempt'],

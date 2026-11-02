@@ -1,1 +1,4 @@
-{"build_tools":"35.0.0","apksigner_jar_sha256":null}
+{
+  "build_tools": "35.0.0",
+  "apksigner_jar_sha256": "00ef9948f843fe395d2440ae3ef41405b8040a6d5d46493bd1902ac0ee6deae7"
+}

@@ -21,8 +21,12 @@ def keytool():
 
 def run(args, *, password=None, data=None):
     env = os.environ.copy()
+    for name in ['JAVA_TOOL_OPTIONS', 'JDK_JAVA_OPTIONS', '_JAVA_OPTIONS']:
+        env.pop(name, None)
     if password is not None:
         env['FIELD_OWNER_PASSWORD'] = password
+    if Path(args[0]).name == 'keytool':
+        args=[args[0], '-J-Xmx256m', *args[1:]]
     result = subprocess.run(args, input=data, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
     if result.returncode:
         raise RuntimeError('Command failed; private diagnostics suppressed: ' + args[0])

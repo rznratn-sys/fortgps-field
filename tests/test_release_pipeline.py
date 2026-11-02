@@ -225,6 +225,9 @@ class PortableHandoffTests(unittest.TestCase):
             changed=dict(value);changed[field]=bad
             with patch.object(gh,'api',return_value=changed),self.assertRaises(ValueError):gh.build_run('123','c'*40)
     def test_test_signed_bundle_publication_refused(self):
+        text='Signer #1 certificate DN: CN=FortGPS TEST ONLY - NOT FOR DISTRIBUTION'
+        with self.assertRaises(ValueError):v.reject_test_certificate(text)
+        v.reject_test_certificate(text,allow_test=True)
         with tempfile.TemporaryDirectory() as d:
             p=Path(d)
             for n in v.file_names(PLAN):(p/n).write_text('fixture')

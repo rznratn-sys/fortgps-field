@@ -14,7 +14,9 @@ podepsaný APK, veřejný certifikát/otisky a dokumentaci. Zatím jde pouze o p
    pipeline commitem, run ID a výsledky testů. Samostatné CI zkusí skutečný podpis
    dočasným TEST ONLY klíčem na x86-64 a ARM64. Testovací APK ani klíč se neuploadují.
 3. Pi: zkontroluje schválený build a hash, lokálně podepíše Java apksigner.jar,
-   ověří podpis a shodu každého původního ZIP souboru. Žádný Gradle ani síť v signeru.
+   ověří podpis a shodu každého původního ZIP souboru. Žádný Gradle ani síť v signeru. JVM signing procesu má limit heapu 256 MiB
+   a nejvýše dvě aktivní CPU; nejde o rezervaci zdrojů. Spouštěj jej při volné
+   kapacitě. Nastavení projektu Věc se nemění.
 4. Až po pozdějším samostatném souhlasu: šest veřejných souborů do GitHub draftu.
    Chráněné ruční workflow stáhne draft i původní unsigned artifact, nezávisle
    ověří podpis/obsah/metadata, zveřejní a znovu stáhne veřejné soubory.
@@ -148,7 +150,8 @@ smí přibýt jen tři pevně pojmenované podpisové soubory. Nezarovnává APK
 Chyba nezpřístupní částečný delivery adresář. Veřejný výstup má přesně šest souborů:
 APK, release-manifest.json, SHA256SUMS, INSTALL.md, RELEASE_NOTES.md, TEST_REPORT.md.
 Žádný privátní soubor se nekopíruje. `--test-only` není produkční zkratka:
-jeho výstupy jsou označené a staging/publikace je odmítnou.
+jeho výstupy jsou označené a staging/publikace je odmítnou; odmítá se také
+certifikát s testovacím subjectem, i kdyby někdo přepsal příznak v JSON.
 
 ## 6. Pozdější publikace — nyní zakázaný krok
 
