@@ -1,0 +1,102 @@
+name: Publish signed Field alpha3
+on:
+  push:
+    branches: [field-2-alpha3-delivery-20261102]
+    paths: ['.github/workflows/publish-alpha3.yml']
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: publish-field-alpha3
+  cancel-in-progress: false
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: f04dba7c2147bf1041482e6c2e872325c5a4633e
+          persist-credentials: false
+      - name: Require private signing material
+        env:
+          KEYSTORE_B64: ${{ secrets.FIELD_RELEASE_KEYSTORE_BASE64 }}
+          STORE_PASS: ${{ secrets.FIELD_STORE_PASSWORD }}
+          KEY_PASS: ${{ secrets.FIELD_KEY_PASSWORD }}
+        run: |
+          test -n "$KEYSTORE_B64" || { echo "::error::Set FIELD_RELEASE_KEYSTORE_BASE64 repository secret"; exit 1; }
+          test -n "$STORE_PASS" || { echo "::error::Set FIELD_STORE_PASSWORD repository secret"; exit 1; }
+          test -n "$KEY_PASS" || { echo "::error::Set FIELD_KEY_PASSWORD repository secret"; exit 1; }
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+      - uses: gradle/actions/setup-gradle@v4
+      - run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+      - name: Build with original private release key
+        env:
+          KEYSTORE_B64: ${{ secrets.FIELD_RELEASE_KEYSTORE_BASE64 }}
+          FIELD_STORE_PASSWORD: ${{ secrets.FIELD_STORE_PASSWORD }}
+          FIELD_KEY_PASSWORD: ${{ secrets.FIELD_KEY_PASSWORD }}
+          FIELD_KEY_ALIAS: ${{ secrets.FIELD_KEY_ALIAS }}
+        run: |
+          set -euo pipefail
+          umask 077
+          printf '%s' "$KEYSTORE_B64" | base64 --decode > "$RUNNER_TEMP/field-release.jks"
+          export FIELD_KEYSTORE="$RUNNER_TEMP/field-release.jks"
+          export FIELD_KEY_ALIAS="${FIELD_KEY_ALIAS:-field2}"
+          cd android
+          ./gradlew :app:testDebugUnitTest :app:lintDebug :app:assembleRelease :app:lintRelease
+      - name: Verify actual APK signature, identity and create manifest
+        run: |
+          set -euo pipefail
+          mkdir -p delivery
+          cp android/app/build/outputs/apk/release/app-release.apk delivery/FortGPS_Field_2.0.0-alpha3.apk
+          python3 scripts/verify-alpha3.py --help || true
+          signer=$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -1)
+          aapt=$(find "$ANDROID_HOME/build-tools" -name aapt -type f | sort -V | tail -1)
+          "$signer" verify --verbose --print-certs delivery/FortGPS_Field_2.0.0-alpha3.apk > "$RUNNER_TEMP/apksigner.txt"
+          "$aapt" dump badging delivery/FortGPS_Field_2.0.0-alpha3.apk > "$RUNNER_TEMP/aapt.txt"
+          python3 - <<'PY'
+          import hashlib, json, re
+          from pathlib import Path
+          apk=Path('delivery/FortGPS_Field_2.0.0-alpha3.apk')
+          sign=Path(__import__('os').environ['RUNNER_TEMP']+'/apksigner.txt').read_text()
+          aapt=Path(__import__('os').environ['RUNNER_TEMP']+'/aapt.txt').read_text()
+          expected='ef2ee10dc4833159a50f0b550e8eb4eeac53f21ef47079136b5151990b74fb72'
+          values=re.findall(r'certificate SHA-256 digest:\s*([0-9a-fA-F]{64})',sign)
+          assert values and set(x.lower() for x in values)=={expected}, 'Wrong or missing release signer'
+          assert re.search(r'^Number of signers:\s*1\s*$',sign,re.M), 'Require exactly one signer'
+          assert re.search(r"package: name='cz\.fortgps\.field' versionCode='20002' versionName='2\.0\.0-alpha3'",aapt), 'Wrong Android application ID/version'
+          data={'version':'2.0.0-alpha3','source_commit':'f04dba7c2147bf1041482e6c2e872325c5a4633e','package':'cz.fortgps.field','versionCode':20002,'signer_certificate_sha256':expected,'signer_certificate_sha1':'B7:C8:49:00:77:67:0B:EC:95:94:BF:4C:F6:6A:B2:09:A1:43:1D:8D','apk':{'name':apk.name,'size_bytes':apk.stat().st_size,'sha256':hashlib.sha256(apk.read_bytes()).hexdigest()}}
+          Path('delivery/release-manifest.json').write_text(json.dumps(data,indent=2)+'\n')
+          print('Validated APK and generated manifest:',data['apk']['sha256'])
+          PY
+          cd delivery
+          sha256sum FortGPS_Field_2.0.0-alpha3.apk release-manifest.json > SHA256SUMS
+          cp ../docs/field2/alpha3/INSTALL.md INSTALL.md
+          cp ../docs/field2/alpha3/RELEASE_NOTES.md RELEASE_NOTES.md
+          cp ../docs/field2/alpha3/TEST_REPORT.md TEST_REPORT.md
+      - name: Create draft release, verify readback, then publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: rznratn-sys/fortgps-field
+        run: |
+          set -euo pipefail
+          cd delivery
+          tag=v2.0.0-alpha3
+          assets=(FortGPS_Field_2.0.0-alpha3.apk release-manifest.json SHA256SUMS INSTALL.md RELEASE_NOTES.md TEST_REPORT.md)
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "::error::Release tag already exists; refusing to replace files"
+            exit 1
+          fi
+          gh release create "$tag" --target f04dba7c2147bf1041482e6c2e872325c5a4633e --draft --prerelease --title "FortGPS Field 2.0.0-alpha3" --notes-file RELEASE_NOTES.md "${assets[@]}"
+          check=$(mktemp -d)
+          gh release download "$tag" --dir "$check"
+          for asset in "${assets[@]}"; do cmp "$asset" "$check/$asset"; done
+          (cd "$check" && sha256sum -c SHA256SUMS)
+          gh release edit "$tag" --draft=false
+          gh release view "$tag" --json url,isDraft,isPrerelease,assets
