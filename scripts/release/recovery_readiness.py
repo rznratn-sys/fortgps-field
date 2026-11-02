@@ -17,6 +17,11 @@ from pi_preflight import device_info,runtime_info,write_record
 from portable_tools import verify_jar
 
 
+def gpg_version():
+    r=subprocess.run(['gpg','--no-options','--version'],capture_output=True,text=True,check=True)
+    return r.stdout.splitlines()[0]
+
+
 def fresh(value):
     timestamp(value)
     if datetime.now(timezone.utc)-datetime.strptime(value,'%Y-%m-%dT%H:%M:%SZ').replace(tzinfo=timezone.utc)>timedelta(days=7):
@@ -84,7 +89,7 @@ def prepare(preflight,usb_dir,state,password,backup_password,*,test_only=False):
         restored=root/'restored-usb.p12';transform(output,restored,backup_password,decrypt=True)
         if sha(restored)!=checksum or cert(restored,'field-test',password)!=fingerprint:
             raise ValueError('USB private-key recovery failed')
-    data={'schema':1,'kind':'fortgps-recovery-drill','test_only':test_only,'preflight':profile,
+    data={'gpg':gpg_version(),'schema':1,'kind':'fortgps-recovery-drill','test_only':test_only,'preflight':profile,
           'usb':usb,'encrypted_file':str(output.resolve()),'encrypted_sha256':sha(output),
           'test_keystore_sha256':checksum,'test_certificate_sha256':fingerprint,
           'test_private_files_removed':not root.exists(),
@@ -103,6 +108,7 @@ def finish(state,second_copy,readiness,password,backup_password,*,independent_at
             raise ValueError('USB device changed')
         if os.path.samefile(data['encrypted_file'],second) or os.stat(second).st_dev==os.stat(data['encrypted_file']).st_dev or physical_roots(second)&physical_roots(data['encrypted_file']):
             raise ValueError('Second copy must come from independent storage, not the same USB disk/partition')
+    if data.get('gpg')!=gpg_version():raise ValueError('GPG changed; repeat encrypted recovery rehearsal')
     fresh(data['prepared_at'])
     if not data['test_private_files_removed'] or sha(data['encrypted_file'])!=data['encrypted_sha256'] or sha(second)!=data['encrypted_sha256']:
         raise ValueError('Encrypted copies changed or test cleanup missing')
@@ -110,7 +116,7 @@ def finish(state,second_copy,readiness,password,backup_password,*,independent_at
         restored=Path(temp)/'restored-second.p12';transform(second,restored,backup_password,decrypt=True)
         if sha(restored)!=data['test_keystore_sha256'] or cert(restored,'field-test',password)!=data['test_certificate_sha256']:
             raise ValueError('Second-store private-key recovery failed')
-    record={'schema':1,'kind':'fortgps-identity-readiness','production_ready':not test_only and not data['test_only'],
+    record={'gpg':data['gpg'],'schema':1,'kind':'fortgps-identity-readiness','production_ready':not test_only and not data['test_only'],
             'preflight':data['preflight'],'usb':data['usb'],'encrypted_file':data['encrypted_file'],
             'second_retrieved_file':str(second.resolve()),'encrypted_sha256':data['encrypted_sha256'],
             'independent_storage_attested':True,'verified_restore_copies':2,'test_private_files_removed':not Path(temp).exists(),
@@ -124,6 +130,7 @@ def validate_readiness(path):
     if (r.get('kind')!='fortgps-identity-readiness' or r.get('production_ready') is not True or
         r.get('verified_restore_copies')!=2 or not r.get('independent_storage_attested') or not r.get('test_private_files_removed')):
         raise ValueError('A completed two-store recovery rehearsal is required BEFORE creating a production key')
+    if r.get('gpg')!=gpg_version():raise ValueError('GPG changed; repeat recovery rehearsal')
     check_profile(r['preflight'])
     fresh(r['verified_at'])
     if usb_check(Path(r['encrypted_file']).parent,Path(path).parent)!=r['usb'] or sha(r['encrypted_file'])!=r['encrypted_sha256'] or sha(r['second_retrieved_file'])!=r['encrypted_sha256']:

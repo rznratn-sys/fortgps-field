@@ -97,6 +97,8 @@ def main():
             raise ValueError('--readiness required: rehearse BOTH encrypted backups before production creation')
         from recovery_readiness import validate_readiness
         validate_readiness(a.readiness)
+        if key.parent!=external(a.readiness).parent:
+            raise ValueError('Production keystore must stay in the verified private Pi directory, not USB/repository')
         if key.exists():
             raise ValueError('Refusing to replace an existing keystore')
         if input('On your own device, authorize a new long-term signing identity. Type CREATE: ') != 'CREATE':

@@ -257,6 +257,10 @@ class RecoveryPreparationTests(unittest.TestCase):
             p=Path(d)/'readiness.json';p.write_text(json.dumps({'production_ready':False}))
             with self.assertRaises(ValueError):rr.validate_readiness(p)
             with self.assertRaises(ValueError):rr.usb_check(Path(d),Path(d))
+            with patch('sys.argv',['owner_key.py','create','--keystore',str(Path(d)/'must-not-exist.p12')]), patch.object(sys.stdin,'isatty',return_value=True), patch('platform.machine',return_value='aarch64'), patch.dict(os.environ,{},clear=True), patch.object(k,'run') as command:
+                with self.assertRaisesRegex(ValueError,'readiness'):k.main()
+                command.assert_not_called()
+            self.assertFalse((Path(d)/'must-not-exist.p12').exists())
     def test_gpg_roundtrip_wrong_password_tamper_and_no_overwrite(self):
         encrypt=module('encrypted_backup')
         import secrets
