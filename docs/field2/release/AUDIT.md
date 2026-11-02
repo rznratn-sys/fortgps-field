@@ -1,142 +1,108 @@
-# Nezávislé převzetí vydávání alpha3 — 2. 11. 2026
+# Převzetí alpha3 — ověřený stav 2. 11. 2026
 
-## Potvrzený stav
+## Repozitář a zdroje
 
-GitHub API: veřejný repozitář `rznratn-sys/fortgps-field`, default `main`.
-`field-2-native` = `f04dba7c2147bf1041482e6c2e872325c5a4633e`.
-`field-2-alpha3-delivery-20261102` = `352f603df6b8aedbc992a26aaab209bc3a3e95b1`.
-Compare API mezi nimi ukazuje pouze přidaný publish-alpha3.yml. APK kód alpha3
-se při převzetí nemění. Main je samostatná webová větev: release workflow proto
-používá oddělený checkout přesného aplikačního commitu.
+- `field-2-native`: `f04dba7c2147bf1041482e6c2e872325c5a4633e`, schválený zdroj alpha3.
+- Původní delivery větev: `352f603df6b8aedbc992a26aaab209bc3a3e95b1`.
+  Compare API proti f04dba7 potvrzuje pouze přidaný publish-alpha3.yml.
+- Výchozí `main`: `302b753959780d6c9ce777db3d713a73de58b735`, samostatná webová aplikace.
+- [PR #2](https://github.com/rznratn-sys/fortgps-field/pull/2) přidává release nástroje na main;
+  [PR #3](https://github.com/rznratn-sys/fortgps-field/pull/3) opravuje původní delivery workflow.
+  Jsou připravené k review, nikoli sloučené. Android ani webový aplikační kód se nemění.
 
-Gradle: JDK 17, wrapper 8.11.1 s distribution SHA-256, AGP 8.9.1,
-Kotlin 2.0.21, compile/target SDK 35, minSDK 26. `applicationId` a namespace
-`cz.fortgps.field`, versionName `2.0.0-alpha3`, versionCode `20002`.
-Gradle bez FIELD_KEYSTORE vytvoří unsigned release. Stará signing konfigurace
-má fallback aliasu/hesla; nová pipeline ji nepoužívá a klíč do Gradlu nepředává.
+Gradle: JDK 17, wrapper 8.11.1 s SHA-256 distribuce, AGP 8.9.1, Kotlin 2.0.21,
+compile/target SDK 35, minSDK 26. Package/namespace `cz.fortgps.field`,
+versionName `2.0.0-alpha3`, versionCode `20002`. Bez FIELD_KEYSTORE vzniká unsigned
+release; nová pipeline klíč Gradlu nikdy nepředává ani nepoužívá jeho fallback aliasu.
 
-Room: verze 2, exportovaná schémata 1/2. Jediná migrace 1→2 přidá
-xmp_operations. Sessions/outbox se nemažou; není zapnutý destructive fallback.
-Alpha2→alpha3 nemění DB verzi. To se vztahuje na upgrade se zachováním DB;
-odinstalace při změně podpisu ji odstraní.
+Room v2, exportovaná schémata 1/2; migrace 1→2 pouze přidává xmp_operations.
+Sessions/outbox se nemažou, destructive fallback není nastaven. Alpha2→alpha3
+nemění DB verzi. Odinstalace při změně podpisu ovšem privátní DB odstraní.
 
-GNSS: LocationCapture žádá GPS_PROVIDER, nikoli network/cached fallback;
-GnssPolicy odmítá mock, špatné souřadnice, budoucí/staré/out-of-order fixy.
-Ruční potvrzení kontroluje konkrétní measurement UUID a monotónní freshness 10 s.
-Nejlepší přesnost není automaticky vybraný historický fix. Pozadí zastavuje odběr.
-Fotografické hranice jsou oddělené od čekání na závěrečný fix.
+GNSS používá GPS_PROVIDER, ruční potvrzení konkrétního fix UUID, monotónní limit
+10 s, odmítnutí mock/budoucích/neplatných/out-of-order fixů a zastavení odběru
+v pozadí. Nejlepší přesnost není automaticky ukládaný historický fix.
+Fotografické hranice zůstávají oddělené od čekání na závěrečný GNSS.
 
-JPEG/XMP: existující ochrana EXIF/obrazu/traileru, kontrola SEF 101/107,
-whitelist známých položek, idempotence historického alpha2 XMP. Camera_Scene_Info,
-Gallery_DC_Data, neznámé varianty a Motion Photo/MPF/extended XMP zůstávají
-odmítnuté. Tato práce nepřidává jejich podporu a neověřuje reálné fotografie.
+JPEG/XMP zachovává ochranu EXIF/obrazu/traileru, SEF 101/107 whitelist a historickou
+alpha2 idempotenci. Camera_Scene_Info, Gallery_DC_Data, neznámé varianty,
+Motion Photo/MPF/extended XMP zůstávají odmítnuté. Podpora se nerozšiřuje.
 
-Dokumentace alpha3 obsahuje historická tvrzení o lokálních soukromých fixtures,
-podepsaném buildu a původním certifikátu. Nejsou důkazem současné dostupnosti
-klíče. Nový OWNER_RUNBOOK/INSTALL a generovaný TEST_REPORT je pro nové vydání
-nahrazují; původní technické zprávy zachováváme jako historický záznam.
+## Skutečně zopakované testy
 
-Při dotazu na Releases existovala pouze `v2.0.0-alpha2`; alpha3 ani draft alpha3
-nebyl vrácen. Změny zde žádný release/asset/tag nevytvářejí ani nenahrazují.
+Finální aplikační/pipeline kód prošel CI na obou větvích:
+[main nástroje — 41456590437](https://github.com/rznratn-sys/fortgps-field/actions/runs/41456590437),
+[delivery — 41456607330](https://github.com/rznratn-sys/fortgps-field/actions/runs/41456607330).
+Testovaný pipeline commit main `da9f837b9ee66a432c16e3a25ca67522f513895b`,
+delivery `5cfb0d8fc396e0a3e3b4b4bd1b95b3b31243e2bd`; následná revize upravuje jen dokumentaci.
 
-## Podpisové materiály a omezení přístupu
+- Debug APK, instrumentační APK a unsigned release APK sestaveny z přesného f04dba7.
+- JUnit/Robolectric XML: 56 celkem, **53 passed, 3 skipped, 0 failures/errors**.
+  Přeskočeny FieldBackupTest.privateAlpha2FieldBackupRoundTripAndOfflineReopen,
+  RealJpegTest.privateSamsungOriginalPreservedAndIndependentlyParsed a
+  XmpTest.actualPilotSevenPhotos — soukromé fixtures nejsou dostupné.
+- Python: **14 původních + 20 release testů prošlo**, rovněž všech 34 lokálně.
+  Ověřen i CLI preflight/porovnání JSON proti veřejné fixture a skutečnému schématu.
+- Debug/release lint: každý **0 chyb, 29 varování**. Rozpis: GradleDependency 14,
+  UseKtx 10; ApplySharedPref, OldTargetApi, DataExtractionRules,
+  KaptUsageInsteadOfKsp a UsableSpace po jednom. Závislosti ani target se nemění.
+- Bash syntax, Python compile, YAML a předávání artifact ID ověřeny.
 
-Cloud runtime hlásí observations_current=true, secrets=[], runtime_variables=[]
-a outbound_identities=[]. Žádný nakonfigurovaný podpisový vault zde není.
-Vlastník následně výslovně potvrdil „Původní klíč nemám.“
-GitHub connector neposkytuje Secrets/Environments metadata API; endpointy secrets
-nezkoušíme obcházet. Shell gh auth nefunguje a proxy spojení selhalo.
-Není tudíž prokázáno, že v každém jiném soukromém úložišti nic není. Vlastník musí
-zkontrolovat metadatové seznamy v Settings podle OWNER_RUNBOOK před uploadem.
-Klíč ani hesla nebyly čteny, vytvořeny, vypsány nebo nahrány.
+Historická zpráva uváděla 55/1 s dvěma soukromými fixtures; zde jsou navíc dvě
+skip. Historických 14 lint warnings nepřebíráme: aktuální součet je 29, z toho
+15 tvoří GradleDependency/OldTargetApi. Staré lint XML zde nebylo parsováno,
+proto přesnou příčinu rozdílu nelze potvrdit. Starší CI 41337560798/41337556994
+je také success; samotné historické tvrzení o podepsaném buildu nedokládá dnešní
+obnovitelnost klíče. Lokální Gradle blokovala síť; nový GitHub CI build toto omezení obešel.
 
-Starý alpha2 veřejný certifikát dle release:
+Nové kryptografické podepsání, publikace, public readback, fyzický Samsung,
+živý GNSS/Gallery/Drive a skutečná migrace telefonu **nebyly provedeny**.
+Alpha4 bundle test explicitně mockuje kryptografii a žádný klíč negeneruje.
+
+## Klíč a bezpečnost vydávání
+
+Vlastník potvrdil „Původní klíč nemám.“ Cloud readiness má observations_current=true,
+secrets=[], runtime_variables=[], outbound_identities=[]; podpisový vault zde
+není nakonfigurovaný. GitHub connector neposkytuje Secrets/Environment metadata,
+shell gh nemá funkční autentizaci. Nelze tedy tvrdit, že byla prohledána všechna
+jiná soukromá úložiště; vlastnická kontrola seznamů je popsána v OWNER_RUNBOOK.md.
+Žádný nový klíč ani heslo nebyly vytvořeny, čteny nebo nahrány.
+
+Starý veřejný alpha2 certifikát dle vydání:
 SHA-1 B7:C8:49:00:77:67:0B:EC:95:94:BF:4C:F6:6A:B2:09:A1:43:1D:8D,
 SHA-256 ef2ee10dc4833159a50f0b550e8eb4eeac53f21ef47079136b5151990b74fb72.
-Soukromou část nelze získat z APK ani certifikátu. Nový otisk ještě neexistuje.
+Z APK/certifikátu nelze obnovit soukromou část. Nový otisk zatím neexistuje.
 
-## CI a vlastní ověření
+Původní run 41442451499 selhal v Require private signing material; build/signing
+byly skipped. Starý workflow měl push signing, globální contents:write,
+pohyblivé action tags, pevně starý certifikát a klíč v procesu Gradlu.
+Náhrada odděluje build/sign/publish/public readback, připíná actions plnými SHAs,
+klíč zpřístupňuje pouze signing kroku přes chráněný Environment, omezuje write
+na publikační job a nikdy nepřepisuje existující release/tag/assets.
+Push/PR nesmějí podepisovat; ruční signing jen z main vyžaduje přesný schválený
+pipeline SHA, certifikát a matching attestation skutečné obnovy nezávislé zálohy.
+Samotná YAML podmínka nenahrazuje ochranu main a deployment branch/reviewer pravidla.
 
-Zdrojový CI [41337560798](https://github.com/rznratn-sys/fortgps-field/actions/runs/41337560798)
-a 41337556994 jsou success na f04dba7. Načtené job steps a log prvního potvrzují
-assembleDebug, testDebugUnitTest, assembleDebugAndroidTest a lintDebug;
-BUILD SUCCESSFUL, Python Ran 14 tests / OK. Testové artifacts jsou dostupné.
-Přesný počet úspěšných JUnit testů není ve staženém textovém logu vytištěn;
-historických 55/1 proto nezaměňujeme za nově nezávisle spočítaný výsledek.
-Bez dvou soukromých fixtures dokumentace očekává navíc dva přeskočené testy.
+Repo rulesets API vrátilo []; branch-protection endpoint 403 integračního oprávnění.
+Správná ochrana main/Environments tedy není doložena ani tímto PR nastavena.
+Lokální upload nástroj odmítne Environment bez main-only politiky, nezávislé
+review a zákazu admin bypass. Zálohu média/účtu musí fyzicky ověřit vlastník;
+nástroj kontroluje obnovené bajty, certifikát a použitelnost private-key entry přes CSR.
 
-Původní publish run [41442451499](https://github.com/rznratn-sys/fortgps-field/actions/runs/41442451499)
-selhal v Require private signing material. Build a signing byly skipped.
+## Release a migrace
 
-V aktuálním prostředí skutečně prošlo původních 14 Python testů; po přidání
-release testů prošlo 33 testů (19 nových). Bash syntax a Python compile/YAML parse
-prošly. Android Gradle pokus byl proveden, ale nemohl stáhnout distribuci:
-proxy v shellu nedostupná a síťový přístup JVM blokovaný. Nejde o selhání testů
-aplikace. Nová CI pipeline znovu spouští build/test i debug/release lint na f04dba7,
-sbírá XML počty a vytváří zprávu ze skutečných výsledků daného běhu.
+Závěrečný dotaz na Releases vrací pouze `v2.0.0-alpha2`. Alpha3 ani její draft
+nevznikly; neexistuje ověřený nový APK odkaz. Signing/publish/readback joby byly
+v kontrolních bězích správně skipped. Unsigned artifact není instalační release.
 
-Kryptografický test s novým release klíčem, podpis nového APK, jeho publikace,
-public readback a reálná instalace dosud neproběhly. Parsery/trust boundaries,
-chybějící secrets, poškozené assety, reporty, neplatný certifikát, přístup do
-Environment, kontrola obnovy a JSON jsou automaticky testovány bez generování klíče.
+JSON přenese aktuální sessions, nikoli historii outboxu/remote ID, xmp_operations,
+privátní zálohy JPEG, fotografie nebo OAuth. Import vytvoří nové pending položky.
+Změna certifikátu vyžaduje ověřený export mimo aplikaci před odinstalací; import
+se kontroluje podle UUID, celých payloadů, revizí a XMP. drive.file může po změně
+OAuth identity skrýt staré soubory a zvýšit riziko duplicit; sync musí zůstat
+vypnutý do nezávislé kontroly. Podrobnosti a STOP podmínky: INSTALL.md.
 
-## Bezpečnost pipeline a čekající vlastnické kroky
-
-Původní workflow mělo push trigger, globální contents:write, pohyblivé action tags,
-klíč v Gradle procesu a pevně starý certifikát. Nahrazuje jej validation pro
-push/PR a explicitní ruční podpis/publikace z main. Actions jsou připnuté plnými
-commity ověřenými přes GitHub refs API. Contents:write má jen publikační job;
-signing job nemá token pro zápis. Žádný pull_request_target, sdílený runner,
-Gradle cache v signing jobu, wildcard upload mimo delivery nebo přepis assets.
-
-Signed job je oddělen od buildu a schválen přes chráněný Environment.
-Vyžaduje přesný pipeline SHA, certifikát a timestamp obnovené zálohy odpovídající
-certifikátu. Public repository var je pouze otisk certifikátu, nikoli tajný údaj.
-Nezávislé zálohy nemůže cloud fyzicky ověřit; lokální restore/CSR a vlastnické
-potvrzení jsou explicitní podmínkou. Kdokoli může navrhnout změnu workflow;
-jen branch restrictions, ochrana main a nezávislá review brání jejímu zneužití.
-Tyto ochrany nesmí být nahrazeny pouhou podmínkou `if` uvnitř YAML.
-
-Repo rulesets API vrátilo []; branch protection endpoint vrátil 403 integračního
-oprávnění. Není tedy doložena správná ochrana main ani Environments.
-Tyto nastavení tento PR sám nezapnul. Upload nástroj odmítá nechráněné prostředí.
-
-Nejdřív review a instalace pipeline na main; pak schválení vytvoření nového
-klíče na zařízení vlastníka, nezávislé zálohy a skutečná obnova; teprve potom
-výslovně schválený upload Secrets a ruční workflow. Do té doby žádné APK vydání.
-Datová migrace má oddělené STOP podmínky v INSTALL.md, včetně drive.file rizika
-neviditelných historických souborů a duplicitního uploadu.
-
-## Nové CI při převzetí (potvrzeno, doplňuje starší log)
-
-[Kontrolní běh 41453567055](https://github.com/rznratn-sys/fortgps-field/actions/runs/41453567055)
-na pipeline commitu 30596a42458296ece6b5ace3064aacb343160044 úspěšně sestavil
-přesný f04dba7: debug APK, instrumentační APK, unsigned release APK, JUnit,
-debug lint a release lint. Z XML nově spočítáno **56 testů: 53 passed, 3 skipped,
-0 failures/errors**. Python zdroj 14/14, release nástroje 19/19. Oba linty mají
-0 chyb a **29 varování**, což je rozdíl proti historickým 14. Rozpis ID varování
-je doplněn do evidence následující revize pipeline. Podpis/publikace/public
-readback byly správně skipped. Unsigned artifact není instalační release APK.
-
-Pipeline dále předává artefakty přes výstupní ID jobu, aby opakování pouze
-neúspěšného signing/publication jobu používalo přesný artifact úspěšného
-předchůdce i po zvýšení run_attempt. Žádné hledání podle globu napříč běhy.
-
-Poslední lokální sada po doplnění testu kompletního alpha4 bundle má 34 úspěšných
-Python testů (14 původních + 20 release). Alpha4 používá stejné certifikátové
-kontroly; test generování bundle explicitně mockuje kryptografii a negeneruje klíč.
-
-Rozšířená evidence z úspěšného běhu
-[41455289268](https://github.com/rznratn-sys/fortgps-field/actions/runs/41455289268)
-(pipeline 7b7d9cd10761f420d2400fcbae61718e597fbeeb) potvrzuje stejné výsledky.
-Tři skutečně skipped testy: FieldBackupTest.privateAlpha2FieldBackupRoundTripAndOfflineReopen,
-RealJpegTest.privateSamsungOriginalPreservedAndIndependentlyParsed a
-XmpTest.actualPilotSevenPhotos. Jde o chybějící soukromé fixtures, nikoli selhání.
-
-Aktuální lint debug i release: ApplySharedPref 1, OldTargetApi 1,
-GradleDependency 14, DataExtractionRules 1, KaptUsageInsteadOfKsp 1, UsableSpace 1,
-UseKtx 10; celkem 29 warnings, 0 errors. Čtrnáct dependency upozornění a jedno
-OldTargetApi tvoří 15 z dnešního součtu. Zbylých 14 odpovídá kategoriím historické
-zprávy. Staré lint XML zde nebylo nezávisle parsováno, proto přesnou příčinu
-historického rozdílu nelze potvrdit. Závislosti ani target SDK se kvůli němu
-mimo rozsah vydávání nemění.
+Další kroky: review/merge pipeline, ochrany GitHubu, výslovný souhlas vlastníka
+s novou identitou, vytvoření na jeho zařízení, nezávislé zálohy a obnova,
+teprve pak samostatně schválený upload a ruční vydání. Přesné příkazy a alpha4:
+OWNER_RUNBOOK.md. Stejný dlouhodobý klíč se zachová pro další vydání.
