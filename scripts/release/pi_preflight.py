@@ -12,7 +12,7 @@ import subprocess
 import sys
 import tempfile
 from handoff import ROOT,check_input,plan
-from owner_key import external
+from owner_key import external,keytool
 from portable_tools import java,verify_jar
 
 
@@ -27,6 +27,14 @@ def runtime_info():
         if sep and key in ['java.version','java.runtime.version','java.vendor','os.arch']:result[key]=value
     if not result.get('java.version'):raise ValueError('Missing Java version')
     result['major']=int(result['java.version'].split('.')[0])
+    kr=subprocess.run([keytool(),'-J-XshowSettings:properties','-J-version'],capture_output=True,text=True,env=env)
+    if kr.returncode:raise RuntimeError('Cannot inspect selected keytool runtime')
+    for line in kr.stderr.splitlines():
+        key,sep,value=line.strip().partition(' = ')
+        if sep and key in ['java.version','java.runtime.version','java.vendor']:
+            result['keytool.'+key]=value
+    if int(result.get('keytool.java.version','0').split('.')[0])!=result['major']:
+        raise ValueError('java/keytool major versions differ; select the existing JDK via FORTGPS_JAVA_HOME for this process only')
     return result
 
 

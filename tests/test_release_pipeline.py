@@ -251,6 +251,7 @@ class RecoveryPreparationTests(unittest.TestCase):
         info=module('pi_preflight').runtime_info()
         self.assertIn(info['major'],[17,21])
         self.assertIn('java.vendor',info)
+        self.assertEqual(int(info['keytool.java.version'].split('.')[0]),info['major'])
     def test_missing_readiness_cannot_authorize_creation(self):
         rr=module('recovery_readiness')
         with tempfile.TemporaryDirectory() as d:

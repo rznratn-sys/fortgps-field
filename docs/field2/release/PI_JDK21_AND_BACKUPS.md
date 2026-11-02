@@ -107,8 +107,10 @@ python3 scripts/release/pi_preflight.py \
   --report /home/operator/fortgps-release/private/pi-preflight.json
 ```
 
-Zpráva zachytí skutečný Java vendor/verzi, Python, aarch64 a model Pi z read-only
+Zpráva zachytí skutečný Java i keytool vendor/verzi, Python, aarch64 a model Pi z read-only
 /proc/device-tree/model. Musí mít 10 passed kontrol a private_test_files_removed=true.
+Pokud java a keytool ukazují na různé major verze, nic nepřepínej systémově:
+použij pro tento proces FORTGPS_JAVA_HOME s cestou k již instalovanému JDK 21.
 Pošleš-li výsledek, stačí veřejné verze/počty/otisky, ne privátní soubory. Chyba
 znamená STOP a konkrétní diagnostiku, nikoli instalaci jiné Javy naslepo.
 
