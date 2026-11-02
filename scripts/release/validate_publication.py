@@ -11,6 +11,8 @@ from verify import bundle
 
 def main():
     p=plan();env=os.environ
+    if env.get('FIELD_PUBLICATION_ENABLED')!='true':
+        raise ValueError('Publication explicitly disabled')
     pipeline=env['GITHUB_SHA']
     if env.get('FIELD_RELEASE_PIPELINE_SHA')!=pipeline:
         raise ValueError('Publication pipeline has not been approved')
@@ -34,6 +36,13 @@ def main():
     for name in ['INSTALL.md','RELEASE_NOTES.md']:
         if (Path('delivery')/name).read_bytes()!=(Path('original')/name).read_bytes():
             raise ValueError('Release document differs from approved build')
+    ref=subprocess.run(['gh','api',f"repos/{p['repository']}/git/ref/tags/{p['tag']}"],capture_output=True,text=True)
+    if ref.returncode==0:
+        obj=json.loads(ref.stdout)['object']
+        if obj.get('type')!='commit' or obj.get('sha')!=p['source_commit']:
+            raise ValueError('Release tag points to a different source')
+    elif json.loads(ref.stdout).get('status')!='404':
+        raise ValueError('Cannot establish release tag state')
     # This step validates ONLY. A separate workflow step performs the irreversible transition.
     Path('validated-draft-id').write_text(str(r['id']))
     print('Draft, signature, package, version, payload and original build verified. Still unpublished.')

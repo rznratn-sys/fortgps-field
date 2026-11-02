@@ -108,7 +108,8 @@ kopie nebo heslo se do release nepřidávají. Ochrana keystore musí být mode 
 
 Po review/merge spusť workflow `Field unsigned build and Pi-local release` na main,
 `operation=build`. Zdroj alpha3 musí zůstat f04dba7c2147bf1041482e6c2e872325c5a4633e.
-Čekej na úspěšné build **i obě crypto-test větve**. Zkontroluj výsledky, source/pipeline
+Čekej na úspěšné build **i obě crypto-test větve**. Po dílčím rerun spusť nový
+kompletní build; handoff musí odpovídat aktuálnímu run_attempt. Zkontroluj výsledky, source/pipeline
 SHA a z logu „APPROVED UNSIGNED SHA-256“ nezávisle opiš `<unsigned-hash>`.
 
 Pro gh používej případně novou privátní konfiguraci přes `GH_CONFIG_DIR`; neměň
