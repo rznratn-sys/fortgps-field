@@ -1,44 +1,36 @@
-# Ověření převzetí a pipeline
+# Ověření převzetí a release nástrojů — 2. 11. 2026
 
-2. 11. 2026. Aplikační zdroj f04dba7c2147bf1041482e6c2e872325c5a4633e se nemění.
+Finální kód prošel [CI 41456590437](https://github.com/rznratn-sys/fortgps-field/actions/runs/41456590437)
+a [CI 41456607330](https://github.com/rznratn-sys/fortgps-field/actions/runs/41456607330).
+Aplikační zdroj: `f04dba7c2147bf1041482e6c2e872325c5a4633e`, beze změn.
+Pipeline kód main: `da9f837b9ee66a432c16e3a25ca67522f513895b`;
+delivery: `5cfb0d8fc396e0a3e3b4b4bd1b95b3b31243e2bd`.
+Následná revize mění pouze dokumentaci.
 
-- V tomto prostředí: původních 14 Python testů prošlo; s 20 novými release testy
-  prošlo všech 34. Kontrolováno odmítnutí cizího/mizejícího podpisu, chyb nástroje,
-  debug/test manifest flags, package/verzí, změněných assets/manifestu/checksumů,
-  chybějících reportů/secrets, nechráněného Environment a neplatné zálohy/JSON.
-- Bash `-n`, Python compile a YAML parse prošly.
-- Nové podpisové klíče se při testech negenerovaly. Testy parserů nenahrazují
-  kryptografické ověření skutečného nově podepsaného APK.
-- Zdrojové CI běhy 41337560798 a 41337556994 jsou success. Log prvního potvrzuje
-  debug build, JUnit/Robolectric task, sestavení instrumentačního APK, debug lint
-  a 14 Python testů. Lokální historické tvrzení 55 úspěšných/1 skipped nebylo
-  z tohoto textového logu nezávisle spočítáno. Bez soukromých fixtures mohou být
-  další dva testy přeskočeny.
-- Nový lokální Android build byl blokován stažením Gradlu/sítí prostředí.
-  Nový úspěšný unsigned CI běh je uveden níže. Signed release build bude až po
-  vlastnických krocích.
-- Fyzický Samsung, skutečný import přes odinstalaci, živý GNSS/Drive a Gallery
-  nebyly testovány. Originální soukromé JPEG/export fixtures zde nebyly dostupné.
+- Sestaven debug APK, instrumentační APK a unsigned release APK.
+- JUnit/Robolectric: **56 celkem, 53 úspěšných, 3 skipped, 0 chyb/selhání**.
+  Skipped jsou soukromý export alpha2, soukromý Samsung JPEG a sada sedmi fotek.
+  Rozdíl proti historickým 55/1 tvoří dvě nedostupné soukromé fixtures.
+- Python: **14 původních + 20 release testů prošlo** v CI i lokálně (celkem 34).
+- Debug/release lint: každý **0 chyb, 29 warnings**. GradleDependency 14, UseKtx 10;
+  ApplySharedPref/OldTargetApi/DataExtractionRules/KaptUsageInsteadOfKsp/UsableSpace
+  po jednom. Historických 14 warnings není aktuální výsledek.
+- Bash syntax, Python compile, YAML/artifact output wiring a skutečný offline
+  backup CLI proti veřejné fixture/schématu prošly. Lokální Android build blokovala
+  síť, úplné sestavení a lint proto byly skutečně zopakovány v GitHub CI.
 
-Při vydání tento soubor není kopírován do assetu. Pipeline vygeneruje vlastní
-TEST_REPORT.md z JUnit XML, debug/release lint XML a skutečných Python výsledků
-konkrétního build běhu, s přesným zdrojovým a pipeline commitem a ID Actions run.
+Release testy kontrolují podpisové parsery/tool exit code, certifikát, package,
+verzi, debug/test flags, úplnou šestici assetů, poškození manifestu/checksumů,
+reporty, chybějící secrets, ochranu Environment, obnovené zálohy a JSON.
+Test celého alpha4 bundle explicitně mockuje kryptografii a používá testovací
+bajty; ověřuje manifest, verzi zprávy, certifikátová pole a asset inventory.
+Žádný keystore se při těchto testech nevytváří.
 
-## Nově spuštěné CI
+Skutečný podpis novou identitou, publikace a veřejný readback dosud neproběhly;
+jejich workflow joby byly správně skipped. Nové signing credentials/zálohy
+teprve vyžadují vlastníka. Fyzický Samsung, instalace přes odinstalaci, skutečný
+export/import telefonu, živý GNSS, Samsung Gallery a produkční Drive nejsou ověřeny.
 
-Běh [41453567055](https://github.com/rznratn-sys/fortgps-field/actions/runs/41453567055)
-byl dokončen úspěšně: debug + instrumentační + unsigned release APK, 56 JUnit
-celkem (53 úspěšných, 3 přeskočené, 0 chyb/selhání), Python 14 + 19 úspěšných.
-Debug/release lint: každý 0 chyb, 29 varování. Oproti historickému lokálnímu
-55/1 zde chybějí dvě soukromé fixtures. Rozpis lint ID a skipped testů je nově
-součástí build-evidence.json. Signing/publikace/public readback byly skipped.
-
-Doplněný test sestavení celého alpha4 delivery bundle používá explicitně mock
-kryptografického ověření a veřejné testovací bajty. Ověřuje generovaný manifest,
-verzi v test reportu, certifikáty a přesnou šestici assetů. Nevytváří keystore
-ani skutečný instalační APK. Reálný apksigner zůstává povinným gate workflow.
-
-Rozpis 29 lint warnings v každé variantě: GradleDependency 14, UseKtx 10,
-ApplySharedPref/OldTargetApi/DataExtractionRules/KaptUsageInsteadOfKsp/UsableSpace
-po jednom. Nový běh 41455289268 úspěšně ověřil také rozšířenou evidenci a předání
-ID unsigned artefaktu. Kryptografické signing/publication kroky zůstaly skipped.
+Při vydání tento soubor není kopírován do assetu. Pipeline vytvoří vlastní
+TEST_REPORT.md ze skutečných JUnit XML, debug/release lint XML a Python výsledků
+konkrétního běhu, s přesným zdrojovým/pipeline commitem a ID Actions run.
