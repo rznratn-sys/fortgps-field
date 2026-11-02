@@ -47,10 +47,16 @@ def manifest_flags(text):
         raise ValueError('Manifest enables debug/test installation or has an unknown flag encoding')
 
 
+def reject_test_certificate(text, allow_test=False):
+    if not allow_test and re.search(r'^Signer #1 certificate DN:.*FortGPS TEST ONLY',text,re.M|re.I):
+        raise ValueError('Disposable test certificate subject forbidden for production')
+
+
 def verify_apk(apk, plan, cert, tools):
     # check_output also checks the tool exit code: parser text cannot bypass a bad signature.
     signature = subprocess.check_output([str(tools/'apksigner'), 'verify', '--verbose', '--print-certs', str(apk)], text=True)
     certificate(signature, cert)
+    reject_test_certificate(signature)
     badging = subprocess.check_output([str(tools/'aapt'), 'dump', 'badging', str(apk)], text=True)
     identity(badging, plan)
     xml = subprocess.check_output([str(tools/'aapt'), 'dump', 'xmltree', str(apk), 'AndroidManifest.xml'], text=True)
@@ -129,7 +135,7 @@ def bundle(directory, plan, cert, tools, pipeline_sha=None, jar=None, allow_test
     timestamp(manifest['key_backup_verified_at'])
     if jar:
         from local_sign import verify_signature
-        actual_sha1=verify_signature(apk,jar,cert)
+        actual_sha1=verify_signature(apk,jar,cert,allow_test=allow_test)
     else:
         actual_sha1=verify_apk(apk,plan,cert,tools)
     if manifest.get('signer_certificate_sha1') != actual_sha1:

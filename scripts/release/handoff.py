@@ -46,6 +46,8 @@ def plan(path=ROOT/'scripts/release/plan.json'):
     return p
 
 def inventory(apk):
+    if Path(apk).stat().st_size > 128*1024*1024:
+        raise ValueError('APK exceeds 128 MiB signing budget')
     items = {}
     total = 0
     with zipfile.ZipFile(apk) as z:

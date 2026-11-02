@@ -57,6 +57,8 @@ def main():
         restored=root/'restored.p12';shutil.copyfile(key,restored)
         if cert(restored,'field-test',password)!=expected:raise AssertionError('Restored key differs')
         checks+=['restored_disposable_private_key_usable']
+        rejected(lambda:verify_signature(root/'first'/approved['apk_name'],a.jar,expected))
+        checks+=['test_certificate_subject_refused_for_production']
     # Only public test summary survives; TemporaryDirectory removed keys, passwords are not logged.
     report={'architecture':platform.machine(),'system':platform.system(),'checks_passed':checks,
             'private_test_files_removed':not root.exists(),'production_identity_created':False,
