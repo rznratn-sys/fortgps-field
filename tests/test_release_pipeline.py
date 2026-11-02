@@ -66,6 +66,31 @@ class ReleaseTests(unittest.TestCase):
                 manifest['source_commit']='e'*40
                 (p/'release-manifest.json').write_text(json.dumps(manifest)); sums()
                 with self.assertRaises(ValueError): v.bundle(p, PLAN, CERT, Path('/tools'))
+    def test_alpha4_assemble_manifest_report_and_complete_asset_inventory(self):
+        # Cryptographic verification is explicitly mocked: this test creates no key or real APK.
+        with tempfile.TemporaryDirectory() as d:
+            directory=Path(d)/'delivery'; directory.mkdir()
+            plan=dict(PLAN, version_name='2.0.0-alpha4', version_code=20003,
+                      tag='v2.0.0-alpha4', apk_name='FortGPS_Field_2.0.0-alpha4.apk')
+            plan_path=Path(d)/'plan.json'; plan_path.write_text(json.dumps(plan))
+            (directory/plan['apk_name']).write_bytes(b'public test fixture, not a real APK')
+            for name in ['INSTALL.md','RELEASE_NOTES.md']: (directory/name).write_text('fixture')
+            data={'source_commit':plan['source_commit'],'junit':{'tests':56,'failures':0,'errors':0,'skipped':3},
+                  'skipped_tests':['optional fixture'],'lint':{'debug':{'errors':0},'release':{'errors':0}},
+                  'python_tests':14,'pipeline_python_tests':20}
+            (directory/'build-evidence.json').write_text(json.dumps(data))
+            env={'FIELD_RELEASE_CERT_SHA256':CERT,'GITHUB_SHA':'c'*40,'GITHUB_RUN_ID':'123',
+                 'FIELD_KEY_BACKUP_VERIFIED_AT':'2026-11-02T00:00:00Z'}
+            args=['verify.py','assemble','--plan',str(plan_path),'--directory',str(directory),'--tools','/tools']
+            with patch.dict(os.environ,env), patch('sys.argv',args), patch.object(v,'verify_apk',return_value='b'*40):
+                v.main()
+            self.assertEqual({p.name for p in directory.iterdir()},set(v.file_names(plan)+['SHA256SUMS']))
+            manifest=json.loads((directory/'release-manifest.json').read_text())
+            self.assertEqual(manifest['version_code'],20003)
+            self.assertEqual(manifest['signer_certificate_sha256'],CERT)
+            self.assertEqual(manifest['signer_certificate_sha1'],'b'*40)
+            self.assertIn('2.0.0-alpha4',(directory/'TEST_REPORT.md').read_text())
+            self.assertFalse((directory/'build-evidence.json').exists())
     def test_missing_or_failed_test_reports(self):
         with tempfile.TemporaryDirectory() as d:
             p=Path(d)

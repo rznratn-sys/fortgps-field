@@ -129,7 +129,9 @@ aplikační kód. Dekódovaný klíč je v privátním RUNNER_TEMP, trap jej ods
 Publikace nejprve odmítne existující release **i tag**. Vytvoří draft, stáhne
 všech šest assetů a ověří bajty, kontrolní součty, balíček/verzi a apksigner.
 Teprve pak zveřejní prerelease. Další runner stáhne veřejné soubory bez tokenu
-a ověří je znovu. Při selhání ponech draft/release k prošetření; pipeline jej
+a ověří je znovu. Artefakty se mezi joby předávají přes výstupní ID, včetně opakování pouze
+neúspěšného signing jobu; nikdy přes volné hledání v jiném běhu.
+Při selhání ponech draft/release k prošetření; pipeline jej
 nikdy automaticky nepřepisuje ani nemaže. Oprava/nahrazení assetů vyžaduje nové
 konkrétní zdůvodnění a souhlas vlastníka. Do té doby vydání nepovažuj za ověřené.
 

@@ -121,3 +121,22 @@ readback byly správně skipped. Unsigned artifact není instalační release AP
 Pipeline dále předává artefakty přes výstupní ID jobu, aby opakování pouze
 neúspěšného signing/publication jobu používalo přesný artifact úspěšného
 předchůdce i po zvýšení run_attempt. Žádné hledání podle globu napříč běhy.
+
+Poslední lokální sada po doplnění testu kompletního alpha4 bundle má 34 úspěšných
+Python testů (14 původních + 20 release). Alpha4 používá stejné certifikátové
+kontroly; test generování bundle explicitně mockuje kryptografii a negeneruje klíč.
+
+Rozšířená evidence z úspěšného běhu
+[41455289268](https://github.com/rznratn-sys/fortgps-field/actions/runs/41455289268)
+(pipeline 7b7d9cd10761f420d2400fcbae61718e597fbeeb) potvrzuje stejné výsledky.
+Tři skutečně skipped testy: FieldBackupTest.privateAlpha2FieldBackupRoundTripAndOfflineReopen,
+RealJpegTest.privateSamsungOriginalPreservedAndIndependentlyParsed a
+XmpTest.actualPilotSevenPhotos. Jde o chybějící soukromé fixtures, nikoli selhání.
+
+Aktuální lint debug i release: ApplySharedPref 1, OldTargetApi 1,
+GradleDependency 14, DataExtractionRules 1, KaptUsageInsteadOfKsp 1, UsableSpace 1,
+UseKtx 10; celkem 29 warnings, 0 errors. Čtrnáct dependency upozornění a jedno
+OldTargetApi tvoří 15 z dnešního součtu. Zbylých 14 odpovídá kategoriím historické
+zprávy. Staré lint XML zde nebylo nezávisle parsováno, proto přesnou příčinu
+historického rozdílu nelze potvrdit. Závislosti ani target SDK se kvůli němu
+mimo rozsah vydávání nemění.
